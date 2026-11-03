@@ -41,11 +41,11 @@ def _save(rows):
     path.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
 
 
-def add(category, situation, expected, rule, keywords=(), project=None):
+def add(category, situation, expected, rule, keywords=()):
     if category not in CATEGORIES:
         raise ValueError(f"unknown category: {category}")
     entry = {"id": uuid.uuid4().hex[:8], "category": category, "situation": situation,
-             "expected": expected, "rule": rule, "keywords": list(keywords), "project": project,
+             "expected": expected, "rule": rule, "keywords": list(keywords),
              "count": 1, "created": time.strftime("%Y-%m-%d")}
     _save(user_examples() + [entry])
     return entry
@@ -71,11 +71,9 @@ def remove(example_id):
     _update(example_id, lambda row: True)
 
 
-def relevant_user_rules(cwd, limit):
-    """The user's rules for this project and the global ones, the project and the recurring ones first."""
-    rows = [r for r in user_examples() if not r.get("project") or r["project"] == cwd]
-    rows.sort(key=lambda r: (not r.get("project"), -r.get("count", 1)))
-    return rows[:limit]
+def relevant_user_rules(limit):
+    """The user's rules, the recurring ones first. Every example applies to every project."""
+    return sorted(user_examples(), key=lambda r: -r.get("count", 1))[:limit]
 
 
 def _muted():
@@ -101,8 +99,7 @@ def _print_list(category):
     for row in rows:
         if category and row["category"] != category:
             continue
-        scope = "projeto" if row.get("project") else "global"
-        print(f"[{row['id']}] {row['category']} ({scope}, {row.get('count', 1)}x)\n"
+        print(f"[{row['id']}] {row['category']} ({row.get('count', 1)}x)\n"
               f"  Situacao: {row['situation']}\n  Esperado: {row['expected']}\n  Regra: {row['rule']}")
 
 
@@ -114,7 +111,6 @@ def main(argv=None):
     for field in ("situation", "expected", "rule"):
         new.add_argument(f"--{field}", required=True)
     new.add_argument("--keywords", default="", help="comma separated, accent-free, lowercase")
-    new.add_argument("--project", help="absolute project path; omit for a global example")
     listing = sub.add_parser("list")
     listing.add_argument("--category", choices=CATEGORIES)
     listing.add_argument("--remove", metavar="ID")
@@ -125,7 +121,7 @@ def main(argv=None):
 
     if args.command == "add":
         words = [w.strip() for w in args.keywords.split(",") if w.strip()]
-        entry = add(args.category, args.situation, args.expected, args.rule, words, args.project)
+        entry = add(args.category, args.situation, args.expected, args.rule, words)
         print(f"Registrado: {entry['id']}")
     elif args.command == "list" and args.remove:
         remove(args.remove)

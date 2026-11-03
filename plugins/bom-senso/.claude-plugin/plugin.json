@@ -1,6 +1,6 @@
 {
   "name": "bom-senso",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Bom senso: refines each stage of the agent pipeline with common-sense checks and keeps a record of situations where the agent lacked them.",
   "author": {
     "name": "Orgo"

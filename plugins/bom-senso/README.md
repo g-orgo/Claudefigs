@@ -24,6 +24,8 @@ Sessoes de split nao recebem a pergunta, porque nao ha ninguem para responder, e
 - **De fabrica:** `data/seed_examples.json`, publico, sem dados privados.
 - **Seus:** `~/.claude/state/bom-senso/examples.jsonl`, privado, fora do repositorio publico.
 
+Todo exemplo vale para todos os projetos: o registro nao distingue projeto.
+
 A origem dos exemplos de fabrica esta em `docs/analise-inicial.md`.
 
 ## Testes

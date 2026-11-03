@@ -82,11 +82,21 @@ class StoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.add("nope", "s", "e", "r")
 
-    def test_project_rules_stay_in_their_project_and_come_first(self):
-        store.add("consistencia", "s", "e", "global")
-        store.add("consistencia", "s", "e", "here", project="/a")
-        store.add("consistencia", "s", "e", "there", project="/b")
-        self.assertEqual([r["rule"] for r in store.relevant_user_rules("/a", 8)], ["here", "global"])
+    def test_every_example_is_global_and_recurring_ones_come_first(self):
+        store.add("consistencia", "s", "e", "once")
+        recurring = store.add("consistencia", "s", "e", "recurring")
+        store.bump(recurring["id"])
+        self.assertEqual([r["rule"] for r in store.relevant_user_rules(8)], ["recurring", "once"])
+
+    def test_legacy_project_field_does_not_limit_an_example(self):
+        store._save([{"id": "old", "category": "consistencia", "situation": "s", "expected": "e",
+                      "rule": "legacy", "keywords": [], "project": "/elsewhere", "count": 1}])
+        self.assertEqual([r["rule"] for r in store.relevant_user_rules(8)], ["legacy"])
+
+    def test_cli_add_rejects_project(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            store.main(["add", "--category", "consistencia", "--situation", "s", "--expected", "e",
+                        "--rule", "r", "--project", "/a"])
 
     def test_cli_has_no_off_switch(self):
         for switch in ("on", "off"):
@@ -114,6 +124,8 @@ class HookTest(unittest.TestCase):
         text = context(run_hook("prompt", self.payload, self.tmp.name))
         self.assertIn("AskUserQuestion", text)
         self.assertIn("mute abc", text)
+        self.assertNotIn("--project", text)
+        self.assertNotIn("So neste projeto", text)
 
     def test_split_child_is_not_asked(self):
         result = run_hook("prompt", self.payload, self.tmp.name, CLAUDE_SPLIT_CHILD="1")

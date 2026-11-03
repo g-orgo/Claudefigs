@@ -12,10 +12,9 @@ Record the situation with the store CLI. All text goes in pt-BR, short and gener
    ```
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/store.py" add --category <category> \
      --situation "what happened" --expected "what common sense called for" \
-     --rule "an imperative rule for next time" --keywords "lowercase,accent-free,words" \
-     [--project "<absolute project path>"]
+     --rule "an imperative rule for next time" --keywords "lowercase,accent-free,words"
    ```
-   Pass `--project` only when the user chose this project only. Give 4 to 10 keywords that a future prompt on this subject would contain.
+   Every example applies to every project, so write it without project-specific names. Give 4 to 10 keywords that a future prompt on this subject would contain.
 
 Categories: `contexto-existente` (something existing was not surfaced), `consistencia` (siblings or variants left behind), `cobertura` (items skipped), `verificacao` (declared done without seeing it), `leitura-literal` (wrong referent, invented additions, missed purpose), `estados-obvios` (obvious states after an action), `regressao` (broke what was right), `referencia` (strayed from a given reference), `autonomia` (stopped or left work to the user), `pipeline` (agents and tools misused).
 
