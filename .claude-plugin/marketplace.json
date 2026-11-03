@@ -1,0 +1,14 @@
+{
+  "name": "local-plugins",
+  "description": "Local plugins for Orgo's Claude Code setup.",
+  "owner": {
+    "name": "Orgo"
+  },
+  "plugins": [
+    {
+      "name": "prompt-splitter",
+      "description": "Splits a multi-request prompt into separate concurrent background Claude sessions and lets you watch them.",
+      "source": "./plugins/prompt-splitter"
+    }
+  ]
+}
