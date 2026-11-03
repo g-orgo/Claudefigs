@@ -8,7 +8,8 @@ from .model import Worker
 from .term import Frame
 
 WAREHOUSE, BACK = "@warehouse", "@back"
-WAREHOUSE_LABEL = " Todas as sessões "
+WAREHOUSE_LABEL = "Todas as sessões"  # no padding: centered on the parcel, it ends right before the coffee machine.
+PARCEL_CENTER = 7  # the table's parcel spans columns 2 to 11 from the table's left edge.
 FOOTER_FG, FOOTER_BG = (225, 228, 240), (38, 34, 54)
 MARK = (255, 214, 90)
 MIN_COLS, MIN_ROWS = 36, 28
@@ -199,9 +200,9 @@ class Hall:
         hallart.draw_glass(canvas, panel, inside, self.tick + panel.x)
 
     def _warehouse_label_at(self) -> tuple[int, int]:
-        """Cell of the warehouse label: right-aligned to the parcel's right edge, on the row just above its top."""
+        """Cell of the warehouse label: centered on the parcel, on the row just above its top."""
         tx, ty = self.plan.table
-        return max(0, tx + 12 - len(WAREHOUSE_LABEL)), (ty + 7) // 2 - 1
+        return max(0, tx + PARCEL_CENTER - len(WAREHOUSE_LABEL) // 2), (ty + 7) // 2 - 1
 
     def _background(self) -> sprites.Canvas:
         """Floor, walls, table base and the flat parts of the offices of this page, drawn once."""

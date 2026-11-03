@@ -196,9 +196,9 @@ class PlanTests(unittest.TestCase):
         frame = hall.render()
         row = (ty + 7) // 2 - 1
         text = "".join(cell[0] for cell in frame.cells[row])
-        label = " Todas as sessões "
+        label = "Todas as sessões"
         self.assertIn(label, text)
-        self.assertEqual(text.index(label), tx + 12 - len(label))
+        self.assertEqual(text.index(label), tx + 7 - len(label) // 2)
         self.assertIn(ty + 7, range(2 * (row + 1), 2 * (row + 1) + 2))
 
     def test_partition_stays_in_front_of_earlier_panels_but_not_their_windows(self):
@@ -336,6 +336,15 @@ class ScrollHallTests(unittest.TestCase):
         self.assertIsNone(self.office.press())
         self.assertEqual(self.office.mode, "hall")
         self.assertEqual(self.office.hall.page(), 0)
+
+
+class WarehouseLabelTests(unittest.TestCase):
+    def test_label_is_centered_on_the_parcel(self):
+        from office.hall import PARCEL_CENTER, WAREHOUSE_LABEL, Hall
+        hall = Hall(240, 68, False, "x")
+        col, _ = hall._warehouse_label_at()
+        middle = col + len(WAREHOUSE_LABEL) / 2
+        self.assertLessEqual(abs(middle - (hall.plan.table[0] + PARCEL_CENTER)), 1)
 
 
 if __name__ == "__main__":
