@@ -55,6 +55,7 @@ class Hall:
         self.actors: dict = {}
         self.notice, self.notice_until, self.tick = "", 0, 0
         self._page = 0
+        self.covered_rows = 0  # rows above the footer hidden by something the office draws over this view.
         self.resize(cols, rows)
 
     def resize(self, cols: int, rows: int) -> None:
@@ -282,7 +283,7 @@ class Hall:
             frame.text(label_x, max(0, label_y), WAREHOUSE_LABEL, (28, 24, 40) if selected else INK, MARK if selected else CREAM, selected)
         if not self.doors:
             text = " Nenhuma sessao neste diretorio: veja todas as sessões "
-            frame.text((self.cols - len(text)) // 2, self.rows - 3, text, INK, CREAM, True)
+            frame.text((self.cols - len(text)) // 2, self.rows - 3 - self.covered_rows, text, INK, CREAM, True)
         self._footer(frame)
         return frame
 

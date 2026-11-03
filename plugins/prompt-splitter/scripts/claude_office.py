@@ -100,7 +100,7 @@ def handle_key(scene, key: str) -> None:
         if not pressed:
             return
         if button == LEFT_BUTTON and composer is not None:
-            if scene.in_composer(row):
+            if scene.in_composer(col, row):
                 composer.focus()
                 return
             composer.blur()

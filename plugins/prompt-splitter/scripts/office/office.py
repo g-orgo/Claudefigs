@@ -11,15 +11,18 @@ import time
 
 from . import life
 from .bubble import INK, clean
-from .composer import COMPOSER_ROWS, MIN_ROWS, Composer, draw_composer
+from .composer import BACKDROP, MIN_ROWS, Composer, draw_composer, field_geometry, panel_rows
 from .data import full_session_id
 from .hall import BACK, WAREHOUSE, Hall, doors_of
+from .hallart import BAY_W
+from .hallplan import WIDE_COLS, WIDE_ROWS
 from .model import Worker
 from .scene import FOOTER_BG, FOOTER_FG, Scene
 from .term import Frame
 
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DISPATCH = os.path.join(SCRIPTS, "dispatch.py")
+FLOOR_GAP = 2  # rows of floor kept between the box and the footer in the wide hall.
 ROOM_BUSY = ("working", "thinking")
 COPY_WORDING = re.compile(r"(?i)\b(copy|c[oó]pia|started a copy)\b")
 BACK_LABEL, BACK_FILL = " < Voltar ", (232, 178, 92)  # the bubble look: wood gold, ink text
@@ -35,34 +38,66 @@ class Office:
         self.composer = Composer()
         self.results: queue.Queue = queue.Queue()
         self.inflight = False
-        view_rows = self._view_rows(rows)
+        view_rows = self._view_rows()
         self.scene = Scene(cols, view_rows)
         self.place = os.path.basename(os.getcwd().rstrip("/")) or "/"
-        self.hall = Hall(cols, view_rows, False, self.place)
+        self.hall = Hall(cols, self._hall_rows(), False, self.place)
         self.warehouse = Hall(cols, view_rows, True, self.place)
         self.mode = "hall"
         self.door_key: str | None = None
         self.came_from = "hall"
         self.workers: list[Worker] = []
         self.set_workers([])
+        self._sync_covered()
 
-    @staticmethod
-    def _view_rows(rows: int) -> int:
-        """Rows left for the scene and the halls: the composer takes its own strip at the bottom."""
-        return rows - COMPOSER_ROWS if rows >= MIN_ROWS else rows
+    def _view_rows(self) -> int:
+        """Rows of a view with desks or doors all over it: the box gets its own strip when the view still fits beside it."""
+        left = self.rows - panel_rows(self.rows)
+        return left if self.composer_shown() and left >= MIN_ROWS else self.rows
+
+    def _hall_rows(self) -> int:
+        """The wide hall has open floor for the box, so it keeps the whole height."""
+        return self.rows if self._hall_is_wide() else self._view_rows()
+
+    def _hall_is_wide(self) -> bool:
+        return self.cols >= WIDE_COLS and self.rows >= WIDE_ROWS
+
+    def _sync_covered(self) -> None:
+        """Tells the views how many rows the box covers above their footer, for what they center down there."""
+        for view in (self.hall, self.warehouse):
+            view.covered_rows = panel_rows(self.rows) + FLOOR_GAP if self.composer_shown() and view.rows == self.rows else 0
 
     def composer_shown(self) -> bool:
         return self.rows >= MIN_ROWS
 
-    def in_composer(self, row: int) -> bool:
-        return self.composer_shown() and row >= self.rows - COMPOSER_ROWS
+    def field_rect(self) -> tuple[int, int, int, int]:
+        """Where the box sits as (col, top, width, rows): on the open floor of the wide hall, else above the footer."""
+        rows = panel_rows(self.rows)
+        view = self.view()
+        room = None
+        top = self.rows - 1 - rows
+        if view is self.hall and self._hall_is_wide():
+            top -= FLOOR_GAP
+            free = [panel for panel in self.hall.plan.panels if panel.free]
+            if free:
+                left = max(panel.x + BAY_W for panel in free if panel.x < self.cols // 2)
+                room = min(panel.x for panel in free if panel.x >= self.cols // 2) - left - 4
+        width, col = field_geometry(self.cols, room)
+        return col, top, width, rows
+
+    def in_composer(self, col: int, row: int) -> bool:
+        if not self.composer_shown():
+            return False
+        left, top, width, rows = self.field_rect()
+        return left <= col < left + width and top <= row < top + rows
 
     def resize(self, cols: int, rows: int) -> None:
         self.cols, self.rows = cols, rows
-        view_rows = self._view_rows(rows)
+        view_rows = self._view_rows()
         self.scene.resize(cols, view_rows)
-        self.hall.resize(cols, view_rows)
+        self.hall.resize(cols, self._hall_rows())
         self.warehouse.resize(cols, view_rows)
+        self._sync_covered()
 
     def view(self):
         return {"hall": self.hall, "warehouse": self.warehouse, "room": self.scene}[self.mode]
@@ -107,20 +142,26 @@ class Office:
             self.view().step()
 
     def render(self) -> Frame:
-        view = self.view().render()
+        frame = self.view().render()
         if self.composer_shown():
-            frame = Frame(self.cols, self.rows)
-            frame.cells[:view.nrows] = view.cells
-            for row in range(self.rows - COMPOSER_ROWS, self.rows):
-                frame.text(0, row, " " * self.cols, FOOTER_FG, FOOTER_BG)
-            hint = "Enter envia  Esc sai" if self.composer.focused else "Tab escreve"
-            draw_composer(frame, self.rows - COMPOSER_ROWS, self.composer, self._destination(), hint, self.tick)
-        else:
-            frame = view
+            if frame.nrows < self.rows:
+                frame = self._with_strip(frame)
+            col, top, width, rows = self.field_rect()
+            hints = ("Enter envia  Esc sai", "Enter envia") if self.composer.focused else ("Tab escreve",) if self.composer.text else ()
+            draw_composer(frame, top, col, width, rows, self.composer, self._destination(), hints, self.tick)
         button = self.back_button()
         if button is not None:
             col, row, _ = button
             frame.text(col, row, BACK_LABEL, INK, BACK_FILL, True)
+        return frame
+
+    def _with_strip(self, view: Frame) -> Frame:
+        """Opens a band for the box between the view and its footer, so the footer stays on the last row."""
+        frame = Frame(self.cols, self.rows)
+        frame.cells[:view.nrows - 1] = view.cells[:-1]
+        for row in range(view.nrows - 1, self.rows - 1):
+            frame.text(0, row, " " * self.cols, FOOTER_FG, BACKDROP)
+        frame.cells[self.rows - 1] = view.cells[-1]
         return frame
 
     def back_button(self) -> tuple[int, int, int] | None:
@@ -150,7 +191,7 @@ class Office:
         if self.mode == "room":
             worker = self.scene.selected()
             return f"Para: {clean(worker.title)}" if worker else "Selecione um item"
-        return f"Nova sessão em {self.place}"
+        return "Nova sessão"
 
     def paste(self, text: str) -> None:
         """A bracketed paste lands as one insert, and only while the field has focus."""

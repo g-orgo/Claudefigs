@@ -8,7 +8,9 @@ from unittest import mock
 
 import claude_office
 from office import composer as composer_mod
-from office.composer import MAX_TEXT, Composer, draw_composer, field_geometry
+from office import pixelfont
+from office.hallart import BAY_W
+from office.composer import MAX_TEXT, PANEL_ROWS, Composer, draw_composer, field_geometry
 from office.model import Worker
 from office.office import Office
 from office.office import DISPATCH
@@ -74,26 +76,99 @@ class ComposerModelTests(unittest.TestCase):
         self.assertEqual(field_geometry(60), (56, 2))
 
 
-class DrawTests(unittest.TestCase):
-    def test_draws_placeholder_and_border_in_four_rows(self):
-        from office.term import Frame
-        frame = Frame(80, 4)
-        draw_composer(frame, 0, Composer(), "Para: x", "Enter envia", 0)
-        top_row = "".join(cell[0] for cell in frame.cells[0])
-        bottom_row = "".join(cell[0] for cell in frame.cells[3])
-        self.assertIn("╭", top_row)
-        self.assertIn("╰", bottom_row)
-        middle = "".join(cell[0] for cell in frame.cells[1])
-        self.assertIn("Aperte Tab para escrever", middle)
+def field_snapshot(draft, tick=0, hints=()):
+    """The box drawn on a uniform floor, so every changed cell belongs to it."""
+    from office.term import Frame
+    frame = Frame(80, PANEL_ROWS)
+    for line in frame.cells:
+        line[:] = [(" ", None, FLOOR, False)] * 80
+    draw_composer(frame, 0, 0, 80, PANEL_ROWS, draft, "Para: x", hints, tick)
+    return frame
 
-    def test_draws_focused_placeholder(self):
-        from office.term import Frame
+
+FLOOR = (1, 2, 3)
+
+
+class DrawTests(unittest.TestCase):
+    def test_box_is_all_pixels_with_round_corners_over_the_floor(self):
+        frame = field_snapshot(Composer())
+        chars = {cell[0] for line in frame.cells for cell in line}
+        self.assertLessEqual(chars, {" ", "▀"})
+        self.assertEqual(frame.cells[PANEL_ROWS - 1][0], (" ", None, FLOOR, False))
+        self.assertNotEqual(frame.cells[PANEL_ROWS - 1][40][2], FLOOR)
+
+    def test_caret_blinks_only_while_focused(self):
+        draft = Composer()
+        self.assertEqual(field_snapshot(draft, 0).cells, field_snapshot(draft, 4).cells)
+        draft.focus()
+        self.assertNotEqual(field_snapshot(draft, 0).cells, field_snapshot(draft, 4).cells)
+
+    def test_typed_text_changes_the_box(self):
         draft = Composer()
         draft.focus()
-        frame = Frame(80, 4)
-        draw_composer(frame, 0, draft, "Para: x", "Enter envia", 0)
-        middle = "".join(cell[0] for cell in frame.cells[1])
-        self.assertIn("Escreva aqui", middle)
+        empty = field_snapshot(draft).cells
+        draft.insert("ola")
+        self.assertNotEqual(field_snapshot(draft).cells, empty)
+
+    def test_hints_give_way_to_the_destination(self):
+        from office.term import Frame
+        frame = Frame(30, PANEL_ROWS)
+        draw_composer(frame, 0, 0, 30, PANEL_ROWS, Composer(), "Para: x", ("Enter envia  Esc sai",), 0)
+        plain = Frame(30, PANEL_ROWS)
+        draw_composer(plain, 0, 0, 30, PANEL_ROWS, Composer(), "Para: x", (), 0)
+        self.assertEqual(frame.cells, plain.cells)
+
+
+class PixelFontTests(unittest.TestCase):
+    def test_portuguese_letters_differ_from_their_base(self):
+        for accented, base in zip("áàâãéêíóôõúçÁÉÃÇ", "aaaaeeiooouc" + "AEAC"):
+            self.assertNotEqual(pixelfont.glyph(accented)[1], pixelfont.glyph(base)[1], accented)
+
+    def test_every_ascii_character_has_its_own_glyph(self):
+        for code in range(32, 127):
+            self.assertIn(chr(code), pixelfont.GLYPHS)
+
+    def test_glyph_rows_are_rectangular(self):
+        for ch, pattern in pixelfont.GLYPHS.items():
+            self.assertEqual(len({len(row) for row in pattern.split("|")}), 1, ch)
+
+    def test_wrap_keeps_lines_inside_the_width_and_loses_no_text(self):
+        text = "uma frase bem comprida com " + "x" * 60 + " no meio "
+        lines = pixelfont.wrap(text, 60)
+        self.assertTrue(all(pixelfont.text_width(line) <= 60 for line in lines))
+        self.assertEqual("".join(lines).replace(" ", ""), text.replace(" ", ""))
+
+    def test_clip_fits_and_marks_the_cut(self):
+        clipped = pixelfont.clip("Nova sessao em um lugar comprido", 40)
+        self.assertLessEqual(pixelfont.text_width(clipped), 40)
+        self.assertTrue(clipped.endswith("…"))
+
+
+class PlacementTests(unittest.TestCase):
+    def test_wide_hall_box_sits_on_the_floor_between_the_lower_doors(self):
+        office = make_office(rows=65)
+        col, top, width, rows = office.field_rect()
+        self.assertEqual(office.hall.rows, 65)
+        self.assertLess(top + rows, 64)
+        for panel in office.hall.plan.panels:
+            if panel.free:
+                self.assertTrue(panel.x + BAY_W <= col or panel.x >= col + width)
+
+    def test_room_keeps_its_desks_and_footer_clear_of_the_box(self):
+        office = make_office(rows=65)
+        office.mode = "room"
+        _, top, _, rows = office.field_rect()
+        self.assertEqual(office.scene.rows - 1, top)
+        self.assertEqual(top + rows, 64)
+        footer = "".join(cell[0] for cell in office.render().cells[64])
+        self.assertTrue(footer.strip())
+
+    def test_click_only_counts_inside_the_box(self):
+        office = make_office(rows=65)
+        col, top, width, rows = office.field_rect()
+        self.assertTrue(office.in_composer(col, top))
+        self.assertFalse(office.in_composer(col - 1, top))
+        self.assertFalse(office.in_composer(col, top + rows))
 
 
 class KeyTests(unittest.TestCase):
@@ -142,7 +217,8 @@ class KeyTests(unittest.TestCase):
 
     def test_click_in_field_focuses_and_click_elsewhere_blurs(self):
         office = make_office(rows=50)
-        claude_office.handle_key(office, "\x1b[<0;10;47M")
+        col, top, _, _ = office.field_rect()
+        claude_office.handle_key(office, f"\x1b[<0;{col + 2};{top + 2}M")
         self.assertTrue(office.composer.focused)
         claude_office.handle_key(office, "\x1b[<0;10;5M")
         self.assertFalse(office.composer.focused)
