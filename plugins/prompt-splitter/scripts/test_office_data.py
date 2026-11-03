@@ -218,10 +218,11 @@ class LinesAndLabels(Base):
         self.assertEqual(len(lines[0].text), 300)
 
     def test_tail_only_last_tail_lines(self):
-        self.write(*[entry("user", text(f"m{i}")) for i in range(40)])
+        total = data.TAIL + 40
+        self.write(*[entry("user", text(f"m{i}")) for i in range(total)])
         lines = data.transcript_lines(open(self.path, encoding="utf-8").read())
         self.assertEqual(len(lines), data.TAIL)
-        self.assertEqual(lines[-1].text, "m39")
+        self.assertEqual(lines[-1].text, f"m{total - 1}")
 
     def lines_of(self):
         with open(self.path, encoding="utf-8") as handle:

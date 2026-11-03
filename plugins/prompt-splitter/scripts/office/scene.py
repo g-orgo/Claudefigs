@@ -1,7 +1,7 @@
 """The office scene: one walled room per split group, paged by whole rooms, drawn to a terminal frame."""
 from . import props, rooms, sprites
 from .actors import SLOTS, Actor, resolve_target
-from .bubble import CREAM, INK, draw_bubble
+from .bubble import CREAM, INK, chat_geometry, draw_bubble
 from .model import Worker
 from .paths import Grid, desk_blocks
 from .term import Frame
@@ -11,6 +11,12 @@ RAINBOW = [(255, 95, 95), (255, 135, 0), (255, 215, 0), (135, 255, 0), (0, 215, 
 FOOTER_FG, FOOTER_BG = (225, 228, 240), (38, 34, 54)
 NOTICE_TICKS = 24
 BACKGROUND_CACHE = 32
+WHEEL_ROWS = 3  # chat rows per wheel notch
+CONTROLS = [
+    "Setas: esquerda/direita selecionam, cima/baixo e roda rolam o chat  Enter/clique abre  Esc volta  q sai",
+    "Setas selecionam, cima/baixo e roda rolam o chat  Enter abre  Esc volta  q sai",
+    "Setas e roda rolam  Enter abre  Esc volta  q sai",
+]
 
 
 class Scene:
@@ -21,6 +27,8 @@ class Scene:
         self.actors: dict[str, Actor] = {}
         self.selected_id: str | None = None
         self._page = 0  # stored page, clamped to pages() on read.
+        self.chat_scroll: dict[str, int] = {}  # rows back from the newest, per worker id; absent means 0.
+        self._chat_seen: dict[str, int] = {}  # chat row count last seen per worker id, to follow new lines.
         self.seen = 0
         self.notice, self.notice_until = "", 0
         self._backgrounds: dict[tuple, sprites.Canvas] = {}
@@ -51,6 +59,10 @@ class Scene:
         self.pages = rooms.paginate(self.workers, self.cols, self.rows) if self.cols >= MIN_COLS and self.rows >= MIN_ROWS else []
         if self.selected_id not in {w.id for w in self.workers}:
             self.selected_id = self.workers[0].id if self.workers else None
+        live = {w.id for w in self.workers}
+        for offsets in (self.chat_scroll, self._chat_seen):
+            for key in [key for key in offsets if key not in live]:
+                del offsets[key]
 
     def select(self, delta: int) -> None:
         if self.workers:
@@ -59,9 +71,48 @@ class Scene:
             self.reveal()
 
     def scroll(self, delta: int) -> None:
-        """Turns pages without moving the selection; no wrap."""
-        if self.pages:
-            self._page = max(0, min(len(self.pages) - 1, self.page() + delta))
+        """Wheel: one notch moves the selected chat by WHEEL_ROWS; negative is older. Pages do not turn."""
+        self.chat(-delta * WHEEL_ROWS)
+
+    def _cell_of(self, worker: Worker) -> tuple[int, int] | None:
+        """The bubble width and height of a worker on the displayed page, if it is shown."""
+        return next(((cell[2], cell[3]) for w, cell in zip(self.visible(), self._cells()) if w.id == worker.id), None)
+
+    def chat(self, rows: int) -> None:
+        """Moves the selected chat by `rows`: positive is older, negative is newer. Clamped at both ends."""
+        worker = self.selected()
+        size = self._cell_of(worker) if worker is not None else None
+        if size is None:
+            return
+        total, keep = chat_geometry(worker, *size)
+        value = max(0, min(max(0, total - keep), self.chat_scroll.get(worker.id, 0) + rows))
+        self._store_chat(worker.id, value)
+        self._chat_seen[worker.id] = total
+
+    def chat_step(self) -> int:
+        """Rows per Up/Down press: one less than the visible body of the selected bubble, at least 1."""
+        worker = self.selected()
+        size = self._cell_of(worker) if worker is not None else None
+        keep = chat_geometry(worker, *size)[1] if size is not None else 3
+        return max(1, keep - 1)
+
+    def _store_chat(self, worker_id: str, value: int) -> None:
+        if value:
+            self.chat_scroll[worker_id] = value
+        else:
+            self.chat_scroll.pop(worker_id, None)
+
+    def _chat_offset(self, worker: Worker, width: int, height: int) -> int:
+        """The clamped offset of a bubble; when new lines arrive above a reader, the offset grows with them."""
+        total, keep = chat_geometry(worker, width, height)
+        seen = self._chat_seen.get(worker.id)
+        value = self.chat_scroll.get(worker.id, 0)
+        if value and seen is not None and total > seen:
+            value += total - seen
+        value = max(0, min(value, max(0, total - keep)))
+        self._store_chat(worker.id, value)
+        self._chat_seen[worker.id] = total
+        return value
 
     def reveal(self) -> None:
         """Brings the stored page to the page holding the selected worker, if it has one."""
@@ -231,7 +282,8 @@ class Scene:
             worker = actor.worker
             color = RAINBOW[positions[worker.id] % len(RAINBOW)]
             tail = actor.desk[0] + props.SEAT_DX + 8
-            draw_bubble(frame, col, top, width, height, worker, self.workers, color, worker.id == self.selected_id, tail, actor.note())
+            offset = self._chat_offset(worker, width, height)
+            draw_bubble(frame, col, top, width, height, worker, self.workers, color, worker.id == self.selected_id, tail, actor.note(), offset)
             if not actor.seated and not actor.away:
                 hx, hy = actor.head()
                 frame.text(hx + 5, hy // 2 - 1, f" {worker.item_label} ", (28, 24, 40), color, True)
@@ -244,9 +296,9 @@ class Scene:
     def _footer(self, frame: Frame) -> None:
         count = lambda *states: sum(w.state in states for w in self.workers)
         pages = max(1, len(self.pages))
-        text = (f" {count('working', 'thinking')} rodando  {count('waiting', 'ask', 'blocked')} aguardando  "
-                f"{count('done')} concluidas  {count('failed')} falhas  |  Setas selecionam  Roda rola  Enter/clique abre  Esc volta  q sai  "
-                f"pagina {self.page() + 1}/{pages}")
+        stats = f" {count('working', 'thinking')} rodando  {count('waiting', 'ask', 'blocked')} aguardando  {count('done')} concluidas  {count('failed')} falhas  |  "
+        tail = f"  pagina {self.page() + 1}/{pages}"
+        text = next((stats + option + tail for option in CONTROLS if len(stats + option + tail) <= self.cols), stats + CONTROLS[-1] + tail)
         if self.tick < self.notice_until:
             text = f" {self.notice}"
         frame.text(0, self.rows - 1, text.ljust(self.cols)[:self.cols], FOOTER_FG, FOOTER_BG)

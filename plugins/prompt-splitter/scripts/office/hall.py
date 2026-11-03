@@ -8,6 +8,7 @@ from .model import Worker
 from .term import Frame
 
 WAREHOUSE, BACK = "@warehouse", "@back"
+WAREHOUSE_LABEL = " Todas as sessões "
 FOOTER_FG, FOOTER_BG = (225, 228, 240), (38, 34, 54)
 MARK = (255, 214, 90)
 MIN_COLS, MIN_ROWS = 36, 28
@@ -121,6 +122,9 @@ class Hall:
             tx, ty = self.plan.table
             if tx <= col < tx + 14 and ty - 2 <= row * 2 < ty + 16:
                 return WAREHOUSE
+            label_x, label_y = self._warehouse_label_at()
+            if row == label_y and label_x <= col < tx + 12:
+                return WAREHOUSE
         for index, key in enumerate(self.visible_keys()):
             panel = self.plan.panels[index]
             shift = panel.shift(max(0, min(hallart.BAY_W - 1, col - panel.x)))
@@ -193,6 +197,11 @@ class Hall:
         hallart.draw_desk_edge(inside)
         hallart.draw_glass(canvas, panel, inside, self.tick + panel.x)
 
+    def _warehouse_label_at(self) -> tuple[int, int]:
+        """Cell of the warehouse label: right-aligned to the parcel's right edge, on the row just above its top."""
+        tx, ty = self.plan.table
+        return max(0, tx + 12 - len(WAREHOUSE_LABEL)), (ty + 7) // 2 - 1
+
     def _background(self) -> sprites.Canvas:
         """Floor, walls, table base and the flat parts of the offices of this page, drawn once."""
         keys = tuple(self.visible_keys())
@@ -208,6 +217,8 @@ class Hall:
                     hallart.draw_roller_front(floor, panel.x, panel.y, True)
                     continue
                 wall = hallart.WALLS[sum(map(ord, key)) % len(hallart.WALLS)]
+                if self.plan.wide and panel.free:
+                    hallart.draw_partition(floor, panel, self.plan.panels[:index])
                 if panel.free:
                     hallart.draw_free_office_frame(floor, panel, wall)
                 if panel.slope == 0:
@@ -222,6 +233,7 @@ class Hall:
                     hallart.draw_office_front(flat, 0, 0, (196, 200, 212), roof=False)
                     hallart.draw_dark_window(flat)
                     if self.plan.panels[index].free:
+                        hallart.draw_partition(floor, self.plan.panels[index], self.plan.panels[:index])
                         hallart.draw_free_office_frame(floor, self.plan.panels[index], (196, 200, 212))
                     hallart.blit_panel(floor, flat, self.plan.panels[index])
             if self.warehouse:
@@ -266,9 +278,10 @@ class Hall:
         if self.plan.table is not None:
             tx, ty = self.plan.table
             selected = self.selected_key == WAREHOUSE
-            frame.text(tx, max(0, ty // 2 - 1), " Warehouse ", (28, 24, 40) if selected else INK, MARK if selected else CREAM, selected)
+            label_x, label_y = self._warehouse_label_at()
+            frame.text(label_x, max(0, label_y), WAREHOUSE_LABEL, (28, 24, 40) if selected else INK, MARK if selected else CREAM, selected)
         if not self.doors:
-            text = " Nenhuma sessao neste diretorio: veja a warehouse "
+            text = " Nenhuma sessao neste diretorio: veja todas as sessões "
             frame.text((self.cols - len(text)) // 2, self.rows - 3, text, INK, CREAM, True)
         self._footer(frame)
         return frame
@@ -294,8 +307,8 @@ class Hall:
                 props.draw_icon(canvas, hx + (0 if actor.hall_flip else 15), hy + 6 - (self.tick // 4) % 2, "steam")
 
     def _footer(self, frame: Frame) -> None:
-        where = "Warehouse: todas as sessoes" if self.warehouse else f"Escritorio: {self.place}"
-        back = "Esc volta" if self.warehouse else "w warehouse"
+        where = "Todas as sessões" if self.warehouse else f"Escritorio: {self.place}"
+        back = "Esc volta" if self.warehouse else "w todas as sessões"
         text = f" {where}  |  Setas selecionam  Roda rola  Enter/clique entra  {back}  q sai  pagina {self.page() + 1}/{self.pages()}"
         if self.tick < self.notice_until:
             text = f" {self.notice}"

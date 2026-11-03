@@ -1,5 +1,6 @@
 """The container above each character: a filled title bar and the tail of the split's activity."""
 import re
+from functools import lru_cache
 
 from .model import Worker
 from .term import Frame, char_width
@@ -66,33 +67,56 @@ def state_text(worker: Worker, workers: list[Worker]) -> str:
     return f"Estou aguardando {names}" if names else "Estou aguardando"
 
 
-def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, note: str = "") -> list[tuple[str, tuple, bool]]:
-    """The last rows of the activity, as (text, color, bold), with the state always on the last one."""
+@lru_cache(maxsize=4096)
+def _wrapped(text: str, width: int) -> tuple[str, ...]:
+    """Cached wrap: the activity lines do not change between frames, so each one is wrapped once."""
+    return tuple(wrap(text, width))
+
+
+def chat_rows(worker: Worker, width: int) -> list[tuple[str, tuple, bool]]:
+    """Every wrapped activity row of the worker, oldest first, without the state line."""
     rows: list[tuple[str, tuple, bool]] = []
     for line in worker.lines:
         if line.role == "tool":
             label = f"· {clean(line.text)}" + (f" (x{line.count})" if line.count > 1 else "")
-            rows += [(row, TOOL, False) for row in wrap(label, width)]
+            rows += [(row, TOOL, False) for row in _wrapped(label, width)]
         else:
             name, color = ROLES.get(line.role, (line.role, INK))
             rows.append((name, color, True))
-            rows += [(row, INK, False) for row in wrap(line.text, width)]
+            rows += [(row, INK, False) for row in _wrapped(line.text, width)]
     if worker.subagents > 0:
         count = worker.subagents
         rows.append((f"Tenho {count} subagent{'s' if count > 1 else ''} rodando", TOOL, False))
-    state = clip(state_text(worker, workers) + (f", {note}" if note else ""), width)
+    return rows
+
+
+def chat_geometry(worker: Worker, width: int, height: int) -> tuple[int, int]:
+    """(total body rows, visible body rows) for a bubble of this box size; the state line takes one row."""
+    return len(chat_rows(worker, width - 4)), max(0, height - 3)
+
+
+def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, note: str = "", offset: int = 0) -> list[tuple[str, tuple, bool]]:
+    """The activity window, as (text, color, bold), with the state always on the last one.
+
+    `offset` is how many rows back from the newest the window ends; 0 shows the tail."""
+    rows = chat_rows(worker, width)
     keep = max(0, height - 1)
-    return (rows[-keep:] if keep else []) + [(state, STATE_COLORS.get(worker.state, INK), True)]
+    offset = max(0, min(offset, max(0, len(rows) - keep)))
+    end = len(rows) - offset
+    scrolled = " (rolando: Baixo volta)" if offset > 0 else ""
+    state = clip(state_text(worker, workers) + (f", {note}" if note else "") + scrolled, width)
+    body = rows[max(0, end - keep):end] if keep else []
+    return body + [(state, STATE_COLORS.get(worker.state, INK), True)]
 
 
 def draw_bubble(frame: Frame, col: int, row: int, width: int, height: int, worker: Worker, workers: list[Worker],
-                color: tuple, selected: bool, tail_col: int, note: str = "") -> None:
+                color: tuple, selected: bool, tail_col: int, note: str = "", offset: int = 0) -> None:
     dark = tuple(int(c * 0.6) for c in color)
     left, right, low_l, low_r, bar, side = ("╔", "╗", "╚", "╝", "═", "║") if selected else ("╭", "╮", "╰", "╯", "─", "│")
     inner = width - 2
     title = clip(f" {worker.item_label} {clean(worker.title)} ", inner)
     frame.text(col, row, left + title + " " * (inner - width_of(title)) + right, (28, 24, 40), color, selected)
-    rows = body_rows(worker, workers, inner - 2, height - 2, note)
+    rows = body_rows(worker, workers, inner - 2, height - 2, note, offset)
     blank = height - 2 - len(rows)
     for i in range(height - 2):
         frame.text(col, row + 1 + i, side, dark, CREAM)

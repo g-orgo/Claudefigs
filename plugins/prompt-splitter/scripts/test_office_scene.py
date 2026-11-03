@@ -10,8 +10,9 @@ from claude_office import PARTIAL, handle_key, keys_of, open_session, parse_mous
 from office import props
 from office.model import Line, Worker
 from office.actors import SLOTS, resolve_target
-from office.bubble import body_rows
+from office.bubble import body_rows, chat_geometry
 from office import rooms
+from office.office import BACK_LABEL, COPY_WORDING, Office
 from office.scene import MIN_COLS, MIN_ROWS, Scene
 from office.sprites import Canvas
 from office.term import MOUSE_OFF, MOUSE_ON, Frame, Screen, char_width, diff
@@ -240,18 +241,18 @@ class HandleKeyTests(unittest.TestCase):
         scene.set_workers([make_worker(i) for i in range(3)])
         return scene
 
-    def test_wheel_turns_pages_and_keeps_selection(self):
+    def test_wheel_scrolls_the_selected_chat_and_keeps_page_and_selection(self):
         scene = Scene(200, 60)
-        scene.set_workers([make_worker(i) for i in range(60)])
-        self.assertGreater(len(scene.pages), 1)
-        selected = scene.selected_id
+        scene.set_workers([make_worker(0, lines=[Line("claude", f"linha {n}") for n in range(60)])])
+        page = scene.page()
+        handle_key(scene, "\x1b[<64;1;1M")
+        self.assertGreater(scene.chat_scroll.get("w0", 0), 0)
+        self.assertEqual(scene.page(), page)
+        self.assertEqual(scene.selected_id, "w0")
         handle_key(scene, "\x1b[<65;1;1M")
-        self.assertEqual(scene.page(), 1)
-        self.assertEqual(scene.selected_id, selected)
-        handle_key(scene, "\x1b[<64;1;1M")
-        handle_key(scene, "\x1b[<64;1;1M")
-        self.assertEqual(scene.page(), 0)
-        self.assertEqual(scene.selected_id, selected)
+        handle_key(scene, "\x1b[<65;1;1M")
+        self.assertEqual(scene.chat_scroll.get("w0", 0), 0)
+        self.assertEqual(scene.selected_id, "w0")
 
     def test_tab_no_longer_moves_selection(self):
         scene = self.scene()
@@ -285,37 +286,137 @@ class HandleKeyTests(unittest.TestCase):
 
 
 class ScrollSceneTests(unittest.TestCase):
-    def scene(self) -> Scene:
+    def scene(self, count: int = 1) -> Scene:
         scene = Scene(200, 60)
-        scene.set_workers([make_worker(i) for i in range(60)])
-        self.assertGreater(len(scene.pages), 1)
+        workers = [make_worker(0, lines=[Line("claude", f"linha {n}") for n in range(60)])]
+        workers += [make_worker(i) for i in range(1, count)]
+        scene.set_workers(workers)
         return scene
 
-    def test_scroll_stops_at_both_ends_without_wrapping(self):
+    def test_scroll_up_moves_chat_older_and_stops_at_the_top(self):
         scene = self.scene()
-        last = len(scene.pages) - 1
+        for _ in range(60):
+            scene.scroll(-1)
+        worker = scene.workers[0]
+        total, keep = chat_geometry(worker, scene._cell_of(worker)[0] - 4, scene._cell_of(worker)[1])
+        self.assertEqual(scene.chat_scroll["w0"], total - keep)
         scene.scroll(-1)
-        self.assertEqual(scene.page(), 0)
-        for _ in range(len(scene.pages) + 2):
-            scene.scroll(1)
-        self.assertEqual(scene.page(), last)
-        scene.scroll(1)
-        self.assertEqual(scene.page(), last)
+        self.assertEqual(scene.chat_scroll["w0"], total - keep)
 
-    def test_arrow_after_scrolling_brings_the_view_to_the_selection(self):
+    def test_scroll_down_returns_to_newest_and_stops_at_zero(self):
         scene = self.scene()
+        scene.scroll(-1)
         scene.scroll(1)
-        self.assertEqual(scene.page(), 1)
+        scene.scroll(1)
+        self.assertEqual(scene.chat_scroll.get("w0", 0), 0)
+
+    def test_short_chat_stays_at_zero(self):
+        scene = self.scene(count=2)
+        scene.scroll(-1)
+        self.assertEqual(scene.chat_scroll.get("w1", 0), 0)
+
+    def test_chat_offset_is_kept_per_worker_and_dropped_when_removed(self):
+        scene = self.scene(count=2)
+        scene.select(1)
+        scene.chat(-3)
+        scene.chat(3)
+        self.assertNotIn("w1", scene.chat_scroll)
         scene.select(-1)
-        self.assertEqual(scene.page(), scene._selected_page())
+        scene.chat(3)
+        self.assertIn("w0", scene.chat_scroll)
+        scene.set_workers([make_worker(1)])
+        self.assertNotIn("w0", scene.chat_scroll)
 
-    def test_enter_off_page_only_brings_the_page_back(self):
-        scene = self.scene()
-        selected = scene.selected_id
-        scene.scroll(1)
-        self.assertIsNone(scene.press())
-        self.assertEqual(scene.page(), scene._selected_page())
+    def test_selection_and_page_do_not_change_on_chat_scroll(self):
+        scene = self.scene(count=60)
+        selected, page = scene.selected_id, scene.page()
+        scene.chat(3)
         self.assertEqual(scene.selected_id, selected)
+        self.assertEqual(scene.page(), page)
+
+class OfficeBackAndSendTests(unittest.TestCase):
+    def office(self, state: str = "done", attachable: bool = True, sender=None):
+        worker = make_worker(0, state=state, lines=[Line("claude", f"linha {n}") for n in range(60)])
+        worker.attachable = attachable
+        office = Office(200, 60, sender=sender or (lambda argv, cwd: (0, "")))
+        office.set_workers([worker])
+        return office
+
+    def test_back_button_is_top_left_in_room_centered_in_warehouse_absent_in_hall(self):
+        office = self.office()
+        office.mode = "room"
+        self.assertEqual(office.back_button()[0:2], (1, 0))
+        office.mode = "warehouse"
+        self.assertEqual(office.back_button()[1], 0)
+        self.assertEqual(office.back_button()[0], (200 - len(BACK_LABEL)) // 2)
+        office.mode = "hall"
+        self.assertIsNone(office.back_button())
+
+    def test_click_on_back_button_returns_from_room_without_opening_a_bubble(self):
+        office = self.office()
+        office.mode = "room"
+        col, row, _ = office.back_button()
+        with mock.patch("claude_office.open_session") as opened:
+            handle_key(office, f"\x1b[<0;{col + 1};{row + 1}M")
+        opened.assert_not_called()
+        self.assertEqual(office.mode, "hall")
+
+    def test_click_on_back_button_wins_over_a_bubble_under_it(self):
+        office = self.office()
+        office.mode = "room"
+        col, row, _ = office.back_button()
+        with mock.patch("claude_office.open_session", side_effect=RuntimeError("must not open")) as opened:
+            handle_key(office, f"\x1b[<0;{col + 1};{row + 1}M")
+        opened.assert_not_called()
+
+    def test_back_label_is_drawn_on_row_zero(self):
+        office = self.office()
+        office.mode = "room"
+        frame = office.render()
+        self.assertIn(BACK_LABEL.strip(), row_text(frame, 0))
+
+    def test_room_send_stops_attachable_done_worker_then_resumes(self):
+        calls = []
+        sent = []
+        def sender(argv, cwd):
+            sent.append(argv)
+            return 0, ""
+        office = self.office(sender=sender)
+        job = {"worker_id": "w0", "attachable": True, "plan": None}
+        with mock.patch("office.office.subprocess.run", side_effect=lambda *a, **k: calls.append(a[0])):
+            office._run(job, ["claude", "--resume", "s0"], "/tmp")
+        self.assertEqual(calls, [["claude", "stop", "w0"]])
+        self.assertEqual(sent, [["claude", "--resume", "s0"]])
+
+    def test_room_send_to_non_attachable_worker_only_resumes(self):
+        calls, sent = [], []
+        office = self.office(attachable=False, sender=lambda argv, cwd: (sent.append(argv), (0, ""))[1])
+        job = {"worker_id": "w0", "attachable": False, "plan": None}
+        with mock.patch("office.office.subprocess.run", side_effect=lambda *a, **k: calls.append(a[0])):
+            office._run(job, ["claude", "--resume", "s0"], "/tmp")
+        self.assertEqual(calls, [])
+        self.assertEqual(sent, [["claude", "--resume", "s0"]])
+
+    def test_room_send_still_resumes_when_stop_fails(self):
+        sent = []
+        office = self.office(sender=lambda argv, cwd: (sent.append(argv), (0, ""))[1])
+        job = {"worker_id": "w0", "attachable": True, "plan": None}
+        with mock.patch("office.office.subprocess.run", side_effect=OSError("no claude")):
+            office._run(job, ["claude", "--resume", "s0"], "/tmp")
+        self.assertEqual(sent, [["claude", "--resume", "s0"]])
+
+    def test_working_worker_is_refused_and_stop_never_runs(self):
+        calls, sent = [], []
+        office = self.office(state="working", sender=lambda argv, cwd: (sent.append(argv), (0, ""))[1])
+        job = {"worker_id": "w0", "attachable": True, "plan": None}
+        with mock.patch("office.office.subprocess.run", side_effect=lambda *a, **k: calls.append(a[0])):
+            office._run(job, ["claude", "--resume", "s0"], "/tmp")
+        self.assertEqual(calls, [])
+        self.assertEqual(sent, [])
+
+    def test_copy_wording_matches_started_a_copy(self):
+        from office.office import COPY_WORDING
+        self.assertIsNotNone(COPY_WORDING.search("Started a copy of the session"))
 
 
 class OpenSessionTests(unittest.TestCase):
@@ -510,6 +611,17 @@ class RoomLayoutTests(unittest.TestCase):
                     desk_x, desk_y = scene.actors[worker.id].desk
                     leg_end = desk_y + 20 + props.LEG_DROP
                     self.assertLessEqual(leg_end + 3, room.bottom - wall_thick, (cols, rows, worker.id))
+
+    def test_seven_item_demo_group_is_one_page_with_two_desk_lines_at_200x60(self):
+        pages = rooms.paginate(self.workers("demo", 7, "Reorganizar o modulo de login"), 200, 60)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(max(room.lines for room in pages[0]), 2)
+
+    def test_smallest_bubble_keeps_state_line_and_two_body_rows(self):
+        worker = self.workers("demo", 1, "Titulo")[0]
+        worker.lines = [Line("claude", f"linha {n}") for n in range(30)]
+        rows = body_rows(worker, [worker], 60, rooms.BUBBLE_MIN)
+        self.assertGreaterEqual(len(rows), 3)
 
 
 class Phase2SceneTests(unittest.TestCase):

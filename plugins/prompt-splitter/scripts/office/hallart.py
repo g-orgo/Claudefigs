@@ -165,29 +165,49 @@ def draw_side_walls(canvas: Canvas, plan) -> None:
 
 
 def draw_partitions(canvas: Canvas, plan) -> None:
-    """Partition walls behind each free-standing lower office, closing the gap between it and the back wall."""
+    """First pass: partition walls behind every free-standing lower office, under all panels."""
+    for panel in plan.panels:
+        if panel.free:
+            draw_partition(canvas, panel)
+
+
+def column_start(painted, x: int) -> int:
+    """First row a partition may paint in column x: below the window of every painted panel covering that column."""
+    start = 0
+    for other in painted:
+        if other.x <= x < other.x + BAY_W:
+            start = max(start, other.y + other.shift(x - other.x) + WINDOW[1] + WINDOW[3] + 1)
+    return start
+
+
+def draw_partition(canvas: Canvas, panel, painted=()) -> None:
+    """Partition wall behind one free-standing lower office, closing the gap between it and the back wall.
+
+    Rows at or above the window of a panel in `painted` are left alone, so the partition stays in front
+    of earlier panels without ever covering a window.
+    """
     from .hallplan import SLOPE  # local import: hallplan imports this module.
     wall = (168, 186, 216)
-    for panel in plan.panels:
-        if not panel.free:
-            continue
-        inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
-        top_y = panel.y - CAP
-        step = 1 if panel.slope > 0 else -1
-        edge = canvas.width - 1 if step > 0 else 0
-        tone = shade(wall, 0.82 if step > 0 else 0.98)
-        previous = None
-        for x in range(inner, edge + step, step):
-            dx = abs(x - inner)
-            drop = dx // SLOPE
-            top = top_y - drop
-            bottom = top_y + drop + 1
-            for y in range(max(0, top), bottom + 1):
-                canvas.put(x, y, tone)
+    inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
+    top_y = panel.y - CAP
+    step = 1 if panel.slope > 0 else -1
+    edge = canvas.width - 1 if step > 0 else 0
+    tone = shade(wall, 0.82 if step > 0 else 0.98)
+    previous = None
+    for x in range(inner, edge + step, step):
+        dx = abs(x - inner)
+        drop = dx // SLOPE
+        top = top_y - drop
+        bottom = top_y + drop + 1
+        start = column_start(painted, x)
+        for y in range(max(0, top, start), bottom + 1):
+            canvas.put(x, y, tone)
+        if top >= start:
             canvas.put(x, top, OUTLINE)
-            if drop != previous:
+        if drop != previous:
+            if top + 1 >= start:
                 canvas.put(x, top + 1, OUTLINE)
-                previous = drop
+            previous = drop
 
 
 def draw_free_office_frame(canvas: Canvas, panel, wall: Color) -> None:

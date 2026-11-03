@@ -17,7 +17,7 @@ if SCRIPTS_DIR not in sys.path:
 import status  # noqa: E402  (scripts dir is added to sys.path above)
 from office.model import Line, Worker  # noqa: E402
 
-TAIL = 30  # activity lines kept per worker
+TAIL = 200  # activity lines kept per worker
 CLIP = 300  # characters kept per transcript line
 LABEL_MAX = 60
 PREFIX = "split-"

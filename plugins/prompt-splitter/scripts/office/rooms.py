@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from office.model import Worker
 from office.term import char_width
 
-LINE_MIN = 28  # rows of one desk line with the smallest bubble
 STATION_ROWS = 22  # rows of one desk station below its bubble
-BUBBLE_MIN, BUBBLE_MAX = 6, 14  # bubble rows
+BUBBLE_MIN, BUBBLE_MAX = 5, 14  # bubble rows
+LINE_MIN = STATION_ROWS + BUBBLE_MIN  # rows of one desk line with the smallest bubble
 PITCH_MIN, PITCH_MAX = 46, 60  # columns per item
 SIDE_MARGIN = 8  # columns kept free on each side of a room
 CORRIDOR = 4  # columns between rooms in a shelf

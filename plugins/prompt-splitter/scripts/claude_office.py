@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Animated office of the prompt-splitter sessions: one character per split, a click opens its session."""
 import argparse
+import codecs
 import os
 import re
 import select
@@ -26,6 +27,7 @@ ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?)?")
 PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*)?")
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 LEFT_BUTTON, WHEEL_UP, WHEEL_DOWN = 0, 64, 65
+PASTE_START, PASTE_END = "\x1b[200~", "\x1b[201~"
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -83,12 +85,28 @@ def open_session(scene, worker) -> None:
         scene.notify("Nao foi possivel abrir o Konsole")
 
 
+def launch(argv: list[str], cwd: str | None) -> tuple[int, str]:
+    """Runs one send to completion; the office calls it from a worker thread. Returns (exit code, output)."""
+    result = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+    return result.returncode, result.stdout + result.stderr
+
+
 def handle_key(scene, key: str) -> None:
-    """Applies one key or mouse report to the scene."""
+    """Applies one key or mouse report to the scene; a plain Scene has no composer and keeps the old keys."""
+    composer = getattr(scene, "composer", None)
     mouse = parse_mouse(key)
     if mouse is not None:
         button, col, row, pressed = mouse
         if not pressed:
+            return
+        if button == LEFT_BUTTON and composer is not None:
+            if scene.in_composer(row):
+                composer.focus()
+                return
+            composer.blur()
+        hits_back = getattr(scene, "hits_back", None)
+        if button == LEFT_BUTTON and hits_back is not None and hits_back(col, row):
+            scene.back()  # the Voltar button wins over whatever is drawn under it.
             return
         if button == WHEEL_UP:
             scene.scroll(-1)
@@ -98,6 +116,22 @@ def handle_key(scene, key: str) -> None:
             worker = scene.click(col, row)
             if worker is not None:
                 open_session(scene, worker)
+    elif composer is not None and composer.focused:
+        if key in ("\r", "\n"):
+            scene.submit()
+        elif key == "\x1b":
+            composer.blur()  # keeps the draft; a later Esc goes back as usual.
+        elif key in ("\x7f", "\b"):
+            composer.backspace()
+        elif key == "\x15":
+            composer.clear()
+        elif len(key) == 1 and key.isprintable():
+            composer.insert(key)
+    elif key == "\t" and composer is not None and scene.composer_shown():
+        composer.focus()
+    elif key in ("\x1b[A", "\x1b[B") and getattr(scene, "arrows_scroll", lambda: False)():
+        step = scene.chat_step()
+        scene.chat(step if key == "\x1b[A" else -step)  # Up is older, Down is newer.
     elif key in NEXT:
         scene.select(1)
     elif key in PREVIOUS:
@@ -153,7 +187,7 @@ def offline(args: argparse.Namespace, source) -> int:
     return 0
 
 
-def run(source) -> int:
+def run(source, demo: bool = False) -> int:
     if not sys.stdout.isatty() or not sys.stdin.isatty():
         print("claude split precisa de um terminal.", file=sys.stderr)
         return 1
@@ -162,11 +196,15 @@ def run(source) -> int:
     for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
         signal.signal(signum, lambda *_: sys.exit(0))
     screen = Screen()
-    scene = Office(*shutil.get_terminal_size())
+    scene = Office(*shutil.get_terminal_size(), sender=launch, demo=demo)
     source.start()
     pending = ""
+    paste = None  # keys of a bracketed paste in progress, or None
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
     try:
         screen.enter()
+        sys.stdout.write("\x1b[?2004h")
+        sys.stdout.flush()
         while True:
             started = time.monotonic()
             if resized[0]:
@@ -182,15 +220,27 @@ def run(source) -> int:
                 pending = ""  # nothing followed it, so it was the Esc key and not the start of a sequence.
                 handle_key(scene, "\x1b")
             if ready:
-                keys = keys_of(pending + os.read(sys.stdin.fileno(), 1024).decode(errors="ignore"))
+                keys = keys_of(pending + decoder.decode(os.read(sys.stdin.fileno(), 1024)))
                 pending = keys.pop() if keys and PARTIAL.fullmatch(keys[-1]) else ""
                 for key in keys:
-                    if key in ("q", "Q", "\x03"):
+                    if paste is not None:
+                        if key == PASTE_END:
+                            scene.paste("".join(paste))
+                            paste = None
+                        else:
+                            paste.append(key)
+                        continue
+                    if key == PASTE_START:
+                        paste = []
+                    elif key == "\x03" or (key in ("q", "Q") and not getattr(getattr(scene, "composer", None), "focused", False)):
                         return 0
-                    handle_key(scene, key)
+                    else:
+                        handle_key(scene, key)
     except KeyboardInterrupt:
         return 0
     finally:
+        sys.stdout.write("\x1b[?2004l")
+        sys.stdout.flush()
         screen.exit()
 
 
@@ -206,7 +256,7 @@ def main() -> int:
     source = DemoSource() if args.demo else Poller()
     if args.snapshot or args.bench:
         return offline(args, source)
-    return run(source)
+    return run(source, args.demo)
 
 
 if __name__ == "__main__":

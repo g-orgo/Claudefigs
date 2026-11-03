@@ -1,11 +1,12 @@
 """Tests for the hall of doors, the warehouse, the navigation and the idle characters' plans."""
 import unittest
 
-from office import data, sprites
+from office import data, hallart, sprites
 from office.demo import DemoSource
 from office.hall import BACK, WAREHOUSE, doors_of
 from office.model import Worker
-from office.hallart import BAY_H, BAY_W, draw_side_walls
+from office.hallart import BAY_H, BAY_W, CAP, WINDOW, draw_side_walls, shade
+from office.hallplan import SLOPE
 from office.props import OUTLINE
 from office.hallplan import BACK_Y, DROP, TABLE_TOP, Plan
 from office.office import Office
@@ -186,6 +187,56 @@ class PlanTests(unittest.TestCase):
             hall.select(1)
         self.assertEqual(hall.selected_key, WAREHOUSE)
         self.assertEqual(hall.page(), hall.pages() - 1)
+
+    def test_warehouse_label_sits_on_top_of_the_parcel(self):
+        office = Office(200, 60)
+        office.set_workers([worker("a0", "p0")])
+        hall = office.hall
+        tx, ty = hall.plan.table
+        frame = hall.render()
+        row = (ty + 7) // 2 - 1
+        text = "".join(cell[0] for cell in frame.cells[row])
+        label = " Todas as sessões "
+        self.assertIn(label, text)
+        self.assertEqual(text.index(label), tx + 12 - len(label))
+        self.assertIn(ty + 7, range(2 * (row + 1), 2 * (row + 1) + 2))
+
+    def test_partition_stays_in_front_of_earlier_panels_but_not_their_windows(self):
+        wall = (168, 186, 216)
+        wall_tones = {shade(wall, 0.82), shade(wall, 0.98)}
+        tones = wall_tones | {OUTLINE}
+        for cols, rows in [(200, 60), (276, 70)]:
+            count = len(Plan(cols, rows, True).panels)
+            for workers in (count, 1):
+                with self.subTest(cols=cols, rows=rows, workers=workers):
+                    office = Office(cols, rows)
+                    office.set_workers([worker(f"a{i}", f"p{i}") for i in range(workers)])
+                    hall = office.hall
+                    floor = hall._background()
+                    covered = 0
+                    for j, owner in enumerate(hall.plan.panels):
+                        if not owner.free:
+                            continue
+                        inner = owner.x if owner.slope > 0 else owner.x + BAY_W - 1
+                        step = 1 if owner.slope > 0 else -1
+                        for panel in hall.plan.panels[:j]:
+                            if panel.slope == 0:
+                                continue
+                            for col in range(BAY_W):
+                                x = panel.x + col
+                                if (x - inner) * step < 0:
+                                    continue
+                                drop = abs(x - inner) // SLOPE
+                                top = owner.y - CAP - drop
+                                bottom = owner.y - CAP + drop + 1
+                                last = panel.y + panel.shift(col) + BAY_H - 1
+                                window = panel.y + panel.shift(col) + WINDOW[1] + 1
+                                if not top < last <= bottom:
+                                    continue
+                                covered += 1
+                                self.assertIn(floor.rows[last][x], tones)
+                                self.assertNotIn(floor.rows[window][x], wall_tones)
+                    self.assertGreater(covered, 0)
 
     def test_nobody_stops_on_the_table_in_the_hall(self):
         office = Office(188, 46)
