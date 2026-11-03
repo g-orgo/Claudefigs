@@ -1,0 +1,27 @@
+{
+  "description": "Injects the common-sense checklist into sessions and operators, and offers to record corrections as examples.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/hook.py\" session", "timeout": 5}
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "frontend-operator|backend-operator|minor-operator|validator",
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/hook.py\" subagent", "timeout": 5}
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/hook.py\" prompt", "timeout": 5}
+        ]
+      }
+    ]
+  }
+}

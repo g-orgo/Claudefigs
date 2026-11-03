@@ -1,0 +1,15 @@
+{
+  "name": "bom-senso",
+  "version": "0.1.1",
+  "description": "Bom senso: refines each stage of the agent pipeline with common-sense checks and keeps a record of situations where the agent lacked them.",
+  "author": {
+    "name": "Orgo"
+  },
+  "keywords": [
+    "common-sense",
+    "pipeline",
+    "corrections",
+    "examples",
+    "agents"
+  ]
+}

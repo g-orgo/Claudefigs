@@ -9,6 +9,11 @@
       "name": "prompt-splitter",
       "description": "Splits a multi-request prompt into separate concurrent background Claude sessions and lets you watch them.",
       "source": "./plugins/prompt-splitter"
+    },
+    {
+      "name": "bom-senso",
+      "description": "Bom senso: refines the agent pipeline with common-sense checks and records situations where they were missing.",
+      "source": "./plugins/bom-senso"
     }
   ]
 }

@@ -35,7 +35,8 @@
     "code-simplifier@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "github@claude-plugins-official": true,
-    "prompt-splitter@local-plugins": true
+    "prompt-splitter@local-plugins": true,
+    "bom-senso@local-plugins": true
   },
   "extraKnownMarketplaces": {
     "local-plugins": {
