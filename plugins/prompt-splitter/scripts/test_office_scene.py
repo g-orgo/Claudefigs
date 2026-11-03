@@ -133,7 +133,20 @@ class SceneTests(unittest.TestCase):
         rows = body_rows(worker, [worker], 30, 4)
         self.assertEqual(len(rows), 4)
         self.assertIn("passo 19", rows[-2][0])
-        self.assertEqual(rows[-1][0], "rodando")
+        self.assertEqual(rows[-1][0], "Estou trabalhando")
+
+    def test_long_tool_line_wraps_and_state_stays_visible(self):
+        worker = self.workers()[0]
+        long_line = "Estou procurando \"ContadorDeItensDaFilaDeProcessamento\" no código do módulo de cobrança"
+        worker.lines = [Line("tool", long_line), Line("tool", "Estou lendo o arquivo api.md")]
+        rows = body_rows(worker, [worker], 20, 12)
+        texts = [row[0] for row in rows]
+        self.assertLessEqual(len(rows), 12)
+        self.assertGreater(len(rows), 3)
+        self.assertEqual(texts[-1], "Estou trabalhando")
+        self.assertIn("Estou lendo o arquivo", " ".join(texts))
+        self.assertTrue(all(len(text) <= 20 for text in texts))
+        self.assertIn("código", " ".join(texts))
 
     def test_selection_stops_at_the_top_and_the_bottom(self):
         scene = Scene(200, 60)

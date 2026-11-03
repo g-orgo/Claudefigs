@@ -45,7 +45,7 @@ O painel lista os splits desta sessão. `/splits` abre o painel em qualquer larg
 
 A primeira tela é o corredor do diretório atual. Em telas a partir de 188x46 as salas ficam nas paredes diagonais ao lado da mesa, e as salas laterais ficam abaixo delas; em telas com menos de 188 colunas elas viram uma lista, e a mesa continua presente em todas as páginas. Cada sessão tem uma porta com vidraça para ver os personagens lá dentro, a label resumida da sessão e uma luz de estado (verde rodando, amarela aguardando, vermelha com falha, cinza ociosa). Só aparecem as sessões cujo split ou sessão de origem rodou neste diretório ou abaixo dele. A mesa tem máquina de café, planta e bebedouro, e os personagens andam por rotas, desviando de mesas, paredes e balcão.
 
-A caixa vermelha sobre a mesa, ou a tecla `w`, leva à warehouse, com todas as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
+A caixa vermelha sobre a mesa, ou a tecla `w`, leva à warehouse, com todas as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Estou lendo o arquivo api.md (x3)`) e o estado na última linha. Os balões narram em primeira pessoa, com o arquivo ou comando em mão.
 
 | Estado do split | O que o personagem faz |
 | --- | --- |

@@ -140,14 +140,77 @@ class LinesAndLabels(Base):
         lines = data.transcript_lines(open(self.path, encoding="utf-8").read())
         self.assertEqual(len(lines), 1)
         self.assertEqual((lines[0].role, lines[0].text, lines[0].count),
-                         ("tool", "Utilizando ferramentas do terminal", 3))
+                         ("tool", "Estou rodando um comando no terminal", 3))
 
     def test_pt_br_labels_and_roles(self):
         self.write(entry("user", text("oi")), entry("assistant", tool("Read")),
                    entry("assistant", tool("Zebra")))
         lines = data.transcript_lines(open(self.path, encoding="utf-8").read())
         self.assertEqual([(l.role, l.text) for l in lines], [
-            ("voce", "oi"), ("tool", "Lendo arquivos"), ("tool", "Utilizando Zebra")])
+            ("voce", "oi"), ("tool", "Estou lendo arquivos"), ("tool", "Estou usando a ferramenta Zebra")])
+
+    def test_transcript_tool_use_uses_its_input(self):
+        block = {"type": "tool_use", "name": "Edit", "id": "x", "input": {"file_path": "/a/b/hall.py"}}
+        self.write(entry("assistant", block))
+        lines = data.transcript_lines(open(self.path, encoding="utf-8").read())
+        self.assertEqual(lines[0].text, "Agora vou modificar o arquivo hall.py")
+
+    def test_collapse_keeps_different_files_separate(self):
+        self.write(*[entry("assistant", {"type": "tool_use", "name": "Read", "id": "x",
+                                         "input": {"file_path": f"/x/{name}"}})
+                     for name in ("a.md", "a.md", "b.md")])
+        lines = data.transcript_lines(open(self.path, encoding="utf-8").read())
+        self.assertEqual([(l.text, l.count) for l in lines], [
+            ("Estou lendo o arquivo a.md", 2), ("Estou lendo o arquivo b.md", 1)])
+
+    def test_bash_description_first_letter_lowered(self):
+        self.assertEqual(data.activity_label("Bash", {"description": "Rodar os testes"}),
+                         "Estou rodando um comando para rodar os testes")
+
+    def test_all_caps_or_digit_first_word_kept(self):
+        self.assertEqual(data.activity_label("Bash", {"description": "API 2 test"}),
+                         "Estou rodando um comando para API 2 test")
+        self.assertEqual(data.activity_label("Bash", {"description": "v1.2 release"}),
+                         "Estou rodando um comando para v1.2 release")
+
+    def test_read_write_edit_notebook_use_basename(self):
+        self.assertEqual(data.activity_label("Read", {"file_path": "/x/api.md"}), "Estou lendo o arquivo api.md")
+        self.assertEqual(data.activity_label("Write", {"file_path": "/x/new.py"}),
+                         "Agora vou escrever o arquivo new.py")
+        self.assertEqual(data.activity_label("Edit", {"file_path": "/x/hall.py"}),
+                         "Agora vou modificar o arquivo hall.py")
+        self.assertEqual(data.activity_label("NotebookEdit", {"notebook_path": "/x/n.ipynb"}),
+                         "Agora vou modificar o notebook n.ipynb")
+
+    def test_search_phrases(self):
+        self.assertEqual(data.activity_label("Grep", {"pattern": "def parse"}),
+                         'Estou procurando "def parse" no código')
+        self.assertEqual(data.activity_label("Glob", {"pattern": "**/*.py"}),
+                         "Estou procurando arquivos com **/*.py")
+        self.assertEqual(data.activity_label("WebSearch", {"query": "cache redis"}),
+                         "Estou pesquisando na web sobre cache redis")
+
+    def test_delegate_skill_and_fixed_phrases(self):
+        self.assertEqual(data.activity_label("Agent", {"description": "Pesquisar bibliotecas"}),
+                         "Estou delegando a um subagent: pesquisar bibliotecas")
+        self.assertEqual(data.activity_label("Skill", {"skill": "commit"}), "Estou usando a skill commit")
+        self.assertEqual(data.activity_label("TodoWrite", {"todos": []}),
+                         "Estou atualizando minha lista de tarefas")
+        self.assertEqual(data.activity_label("AskUserQuestion"), "Estou fazendo uma pergunta")
+
+    def test_webfetch_host_and_bad_url_fallback(self):
+        self.assertEqual(data.activity_label("WebFetch", {"url": "https://docs.exemplo.com/a/b"}),
+                         "Estou consultando a página docs.exemplo.com")
+        self.assertEqual(data.activity_label("WebFetch", {"url": "http://[bad"}),
+                         "Estou consultando uma página da web")
+
+    def test_missing_or_non_dict_input_uses_fallback(self):
+        self.assertEqual(data.activity_label("Read"), "Estou lendo arquivos")
+        self.assertEqual(data.activity_label("Read", "file.md"), "Estou lendo arquivos")
+        self.assertEqual(data.activity_label("Bash", {"description": 5}), "Estou rodando um comando no terminal")
+        self.assertEqual(data.activity_label("Bash", {"description": "   "}),
+                         "Estou rodando um comando no terminal")
+        self.assertEqual(data.activity_label("Edit", {"file_path": "/x/"}), "Agora vou modificar arquivos")
 
     def test_clip_300(self):
         self.write(entry("user", text("x" * 500)))

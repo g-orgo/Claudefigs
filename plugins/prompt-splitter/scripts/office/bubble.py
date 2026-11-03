@@ -13,8 +13,8 @@ STATE_COLORS = {
     "blocked": (190, 120, 0), "failed": (205, 50, 60), "done": (112, 112, 134),
 }
 STATE_TEXT = {
-    "working": "rodando", "thinking": "rodando", "ask": "aguarda sua resposta", "blocked": "concluida, aguarda voce",
-    "failed": "falhou", "done": "encerrada",
+    "working": "Estou trabalhando", "thinking": "Estou trabalhando", "ask": "Preciso da sua resposta",
+    "blocked": "Terminei, aguardo você", "failed": "Algo falhou aqui", "done": "Terminei",
 }
 
 
@@ -62,7 +62,8 @@ def state_text(worker: Worker, workers: list[Worker]) -> str:
     if worker.state != "waiting":
         return STATE_TEXT.get(worker.state, worker.state)
     group = {w.index: w for w in workers if w.group == worker.group}
-    return "aguardando " + ", ".join(group[i].title if i in group else f"item {i}" for i in worker.after)
+    names = ", ".join(group[i].title if i in group else f"item {i}" for i in worker.after)
+    return f"Estou aguardando {names}" if names else "Estou aguardando"
 
 
 def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, note: str = "") -> list[tuple[str, tuple, bool]]:
@@ -78,7 +79,7 @@ def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, no
             rows += [(row, INK, False) for row in wrap(line.text, width)]
     if worker.subagents > 0:
         count = worker.subagents
-        rows.append((f"{count} subagent{'s' if count > 1 else ''} rodando", TOOL, False))
+        rows.append((f"Tenho {count} subagent{'s' if count > 1 else ''} rodando", TOOL, False))
     state = clip(state_text(worker, workers) + (f", {note}" if note else ""), width)
     keep = max(0, height - 1)
     return (rows[-keep:] if keep else []) + [(state, STATE_COLORS.get(worker.state, INK), True)]

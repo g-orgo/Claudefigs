@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SCRIPTS_DIR not in sys.path:
@@ -28,17 +29,24 @@ AGENTS_TIMEOUT = 10
 RECENT_GROUPS = 40
 ALL_RECORDS = 80  # the warehouse shows every directory, so this reaches further back than the side panel
 
+# tool name -> (template, input key, how the value is shaped, fallback when the value is missing)
 ACTIVITY = {
-    "Bash": "Utilizando ferramentas do terminal",
-    "Read": "Lendo arquivos",
-    "Grep": "Lendo arquivos",
-    "Glob": "Lendo arquivos",
-    "Edit": "Editando arquivos",
-    "Write": "Editando arquivos",
-    "NotebookEdit": "Editando arquivos",
-    "Agent": "Delegando a um subagent",
-    "WebSearch": "Pesquisando na web",
-    "WebFetch": "Pesquisando na web",
+    "Bash": ("Estou rodando um comando para {value}", "description", "desc", "Estou rodando um comando no terminal"),
+    "Read": ("Estou lendo o arquivo {value}", "file_path", "base", "Estou lendo arquivos"),
+    "Grep": ("Estou procurando \"{value}\" no código", "pattern", "clip", "Estou procurando no código"),
+    "Glob": ("Estou procurando arquivos com {value}", "pattern", "clip", "Estou procurando arquivos"),
+    "Edit": ("Agora vou modificar o arquivo {value}", "file_path", "base", "Agora vou modificar arquivos"),
+    "Write": ("Agora vou escrever o arquivo {value}", "file_path", "base", "Agora vou escrever arquivos"),
+    "NotebookEdit": ("Agora vou modificar o notebook {value}", "notebook_path", "base", "Agora vou modificar um notebook"),
+    "Agent": ("Estou delegando a um subagent: {value}", "description", "desc", "Estou delegando a um subagent"),
+    "WebSearch": ("Estou pesquisando na web sobre {value}", "query", "clip", "Estou pesquisando na web"),
+    "WebFetch": ("Estou consultando a página {value}", "url", "host", "Estou consultando uma página da web"),
+    "Skill": ("Estou usando a skill {value}", "skill", "clip", "Estou usando uma skill"),
+}
+# tools whose line never changes with the input
+FIXED_ACTIVITY = {
+    "TodoWrite": "Estou atualizando minha lista de tarefas",
+    "AskUserQuestion": "Estou fazendo uma pergunta",
 }
 ACTIVITY_KIND = {
     "Bash": "term",
@@ -131,26 +139,54 @@ def parse_entry(line: str):
     return value if isinstance(value, dict) else None
 
 
-def blocks_of(content) -> list[tuple[str, str]]:
-    """Return ('text', text) or ('tool', name) blocks of a message content."""
+def blocks_of(content) -> list[tuple[str, str, object]]:
+    """Return ('text', text, None) or ('tool', name, input) blocks of a message content."""
     if isinstance(content, str):
-        return [("text", content)] if content != "" else []
+        return [("text", content, None)] if content != "" else []
     if not isinstance(content, list):
         return []
-    out: list[tuple[str, str]] = []
+    out: list[tuple[str, str, object]] = []
     for block in content:
         if not isinstance(block, dict):
             continue
         if block.get("type") == "text" and isinstance(block.get("text"), str) and block["text"] != "":
-            out.append(("text", block["text"]))
+            out.append(("text", block["text"], None))
         elif block.get("type") == "tool_use" and isinstance(block.get("name"), str):
-            out.append(("tool", block["name"]))
+            out.append(("tool", block["name"], block.get("input")))
     return out
 
 
-def activity_label(name: str) -> str:
-    """The pt-BR label of a tool call; unknown tools show their own name."""
-    return ACTIVITY.get(name) or f"Utilizando {clip(name)}"
+def _lower_first(text: str) -> str:
+    """Lowercase the first letter, unless the first word is all caps or has a digit or a dot."""
+    word = text.split(" ", 1)[0]
+    if word.isupper() or any(ch.isdigit() or ch == "." for ch in word):
+        return text
+    return text[:1].lower() + text[1:]
+
+
+def _shaped(value: str, how: str) -> str:
+    """The inserted value of a tool phrase: basename, host or lowered description, clipped."""
+    if how == "base":
+        value = os.path.basename(value)
+    elif how == "host":
+        try:
+            value = urlparse(value).hostname or ""
+        except ValueError:
+            value = ""
+    value = clip(value).strip()
+    return _lower_first(value) if how == "desc" and value else value
+
+
+def activity_label(name: str, tool_input: dict | None = None) -> str:
+    """The first-person pt-BR line of a tool call, built from its real input; the fallback when a field is missing."""
+    if name in FIXED_ACTIVITY:
+        return FIXED_ACTIVITY[name]
+    if name not in ACTIVITY:
+        return f"Estou usando a ferramenta {clip(name)}"
+    template, key, how, fallback = ACTIVITY[name]
+    raw = tool_input.get(key) if isinstance(tool_input, dict) else None
+    value = _shaped(raw, how) if isinstance(raw, str) else ""
+    return template.format(value=value) if value else fallback
 
 
 def collapse_activity(lines: list[Line]) -> list[Line]:
@@ -180,9 +216,9 @@ def transcript_lines(text: str) -> list[Line]:
             continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
-        for block_kind, value in blocks_of(content):
+        for block_kind, value, tool_input in blocks_of(content):
             if block_kind == "tool":
-                out.append(Line(role="tool", text=activity_label(value)))
+                out.append(Line(role="tool", text=activity_label(value, tool_input)))
             elif role == "voce":
                 cleaned = strip_injected(value)
                 if cleaned:
