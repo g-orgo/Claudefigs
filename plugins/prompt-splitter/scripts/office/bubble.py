@@ -65,7 +65,7 @@ def state_text(worker: Worker, workers: list[Worker]) -> str:
     return "aguardando " + ", ".join(group[i].title if i in group else f"item {i}" for i in worker.after)
 
 
-def body_rows(worker: Worker, workers: list[Worker], width: int, height: int) -> list[tuple[str, tuple, bool]]:
+def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, note: str = "") -> list[tuple[str, tuple, bool]]:
     """The last rows of the activity, as (text, color, bold), with the state always on the last one."""
     rows: list[tuple[str, tuple, bool]] = []
     for line in worker.lines:
@@ -79,19 +79,19 @@ def body_rows(worker: Worker, workers: list[Worker], width: int, height: int) ->
     if worker.subagents > 0:
         count = worker.subagents
         rows.append((f"{count} subagent{'s' if count > 1 else ''} rodando", TOOL, False))
-    state = clip(state_text(worker, workers), width)
+    state = clip(state_text(worker, workers) + (f", {note}" if note else ""), width)
     keep = max(0, height - 1)
     return (rows[-keep:] if keep else []) + [(state, STATE_COLORS.get(worker.state, INK), True)]
 
 
 def draw_bubble(frame: Frame, col: int, row: int, width: int, height: int, worker: Worker, workers: list[Worker],
-                color: tuple, selected: bool, tail_col: int) -> None:
+                color: tuple, selected: bool, tail_col: int, note: str = "") -> None:
     dark = tuple(int(c * 0.6) for c in color)
     left, right, low_l, low_r, bar, side = ("╔", "╗", "╚", "╝", "═", "║") if selected else ("╭", "╮", "╰", "╯", "─", "│")
     inner = width - 2
     title = clip(f" {worker.item_label} {clean(worker.title)} ", inner)
     frame.text(col, row, left + title + " " * (inner - width_of(title)) + right, (28, 24, 40), color, selected)
-    rows = body_rows(worker, workers, inner - 2, height - 2)
+    rows = body_rows(worker, workers, inner - 2, height - 2, note)
     blank = height - 2 - len(rows)
     for i in range(height - 2):
         frame.text(col, row + 1 + i, side, dark, CREAM)

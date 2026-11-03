@@ -61,11 +61,18 @@ def demo_workers(now_ms: float | None = None) -> list[Worker]:
     ]
 
 
+def _spread(workers: list[Worker]) -> list[Worker]:
+    """Gives the demo a session outside the working directory, so the warehouse differs from the hall."""
+    for worker in workers:
+        worker.in_cwd = worker.group != "terceira"
+    return workers
+
+
 class DemoSource:
     """Static demo source with the same shape as data.Poller."""
 
     def __init__(self) -> None:
-        self._workers = demo_workers()
+        self._workers = _spread(demo_workers())
 
     def start(self) -> None:
         """No-op: the demo data is static."""

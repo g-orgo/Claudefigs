@@ -34,8 +34,8 @@ def is_under(path: str, base: str) -> bool:
     return path == base or path.startswith(base.rstrip("/") + "/")
 
 
-def load_records(only_cwd: str | None) -> list[dict]:
-    """Return the last record per (group, index), in file order, limited to 20.
+def load_records(only_cwd: str | None, limit: int = 20) -> list[dict]:
+    """Return the last record per (group, index), in file order, limited to limit.
 
     With only_cwd set, keep records whose cwd or parent_cwd is that directory or under it.
     """
@@ -64,7 +64,7 @@ def load_records(only_cwd: str | None) -> list[dict]:
                 key = ("id", rec.get("id"))
             latest.pop(key, None)
             latest[key] = rec
-    return list(latest.values())[-20:]
+    return list(latest.values())[-limit:]
 
 
 def load_agents() -> dict:

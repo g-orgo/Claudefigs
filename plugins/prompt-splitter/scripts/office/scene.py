@@ -34,12 +34,16 @@ class Scene:
         self._backgrounds.clear()
         self.pages = rooms.paginate(self.workers, cols, rows) if cols >= MIN_COLS and rows >= MIN_ROWS else []
 
-    def set_workers(self, workers: list[Worker]) -> None:
+    def register(self, workers: list[Worker]) -> None:
+        """Keeps one actor per worker, whichever view shows it; the look stays for the whole run."""
         for worker in sorted(workers, key=lambda w: w.started_ms):
             if worker.id not in self.actors:
                 self.actors[worker.id] = Actor(worker, sprites.LOOKS[self.seen % len(sprites.LOOKS)])
                 self.seen += 1
             self.actors[worker.id].worker = worker
+
+    def set_workers(self, workers: list[Worker]) -> None:
+        self.register(workers)
         self.workers = [w for group in rooms.group_workers(workers) for w in group]
         self.pages = rooms.paginate(self.workers, self.cols, self.rows) if self.cols >= MIN_COLS and self.rows >= MIN_ROWS else []
         if self.selected_id not in {w.id for w in self.workers}:
@@ -75,6 +79,16 @@ class Scene:
                 return worker
         return None
 
+    def click(self, col: int, row: int) -> Worker | None:
+        """The worker to open for a click on this cell, now selected."""
+        worker = self.worker_at(col, row)
+        if worker is not None:
+            self.selected_id = worker.id
+        return worker
+
+    def press(self) -> Worker | None:
+        return self.selected()
+
     def notify(self, text: str) -> None:
         """Shows a short message in the footer for a few seconds."""
         self.notice, self.notice_until = text, self.tick + NOTICE_TICKS
@@ -100,6 +114,27 @@ class Scene:
         by_id = {a.worker.id: a for a in actors}
         for actor in actors:
             actor.goal = actor.stand_point
+            room = room_of[actor.worker.id]
+            door = room.clamp_foot(room.right - 12, 0)
+            life = actor.life
+            if life.kind == "out":
+                actor.goal = door
+                if actor not in fresh and not actor.seated and actor.foot == door:
+                    actor.away = True
+                elif actor in fresh:
+                    actor.away = True
+                continue
+            if actor.away:
+                actor.away, actor.seated, actor.foot = False, False, door
+            if life.kind == "roam":
+                actor.goal = room.clamp_foot(room.left + int(life.spot[0] * (room.right - room.left)), room.floor_y + int(life.spot[1] * (room.bottom - room.floor_y)))
+                continue
+            if life.kind == "visit" and life.mate in actors and life.mate.visitors < len(SLOTS):
+                dx, dy = SLOTS[life.mate.visitors]
+                actor.goal = room.clamp_foot(life.mate.desk[0] + dx, life.mate.desk[1] + dy)
+                actor.target = life.mate
+                life.mate.visitors += 1
+                continue
             if actor.worker.state != "waiting":
                 continue
             target = resolve_target(actor.worker, self.workers)
@@ -117,7 +152,8 @@ class Scene:
         self.tick += 1
         actors, _ = self._sync()
         for actor in actors:
-            actor.step()
+            if not actor.away:
+                actor.step()
 
     def _background(self, page_rooms: list[rooms.Room]) -> sprites.Canvas:
         """Corridor with every room shell of this page drawn once and cached by room layout."""
@@ -140,7 +176,7 @@ class Scene:
         actors, cells = self._sync()
         page_rooms = self._rooms()
         canvas = self._background(page_rooms).copy()
-        items = [(a.desk[1] + 20, 0, i, a) for i, a in enumerate(actors)] + [(a.foot[1], 1, i, a) for i, a in enumerate(actors) if not a.seated]
+        items = [(a.desk[1] + 20, 0, i, a) for i, a in enumerate(actors)] + [(a.foot[1], 1, i, a) for i, a in enumerate(actors) if not a.seated and not a.away]
         for _, kind, _, actor in sorted(items, key=lambda item: item[:3]):
             (actor.draw_body if kind else actor.draw_station)(canvas, self.tick)
         for actor in actors:
@@ -153,8 +189,8 @@ class Scene:
             worker = actor.worker
             color = RAINBOW[positions[worker.id] % len(RAINBOW)]
             tail = actor.desk[0] + props.SEAT_DX + 8
-            draw_bubble(frame, col, top, width, height, worker, self.workers, color, worker.id == self.selected_id, tail)
-            if not actor.seated:
+            draw_bubble(frame, col, top, width, height, worker, self.workers, color, worker.id == self.selected_id, tail, actor.note())
+            if not actor.seated and not actor.away:
                 hx, hy = actor.head()
                 frame.text(hx + 5, hy // 2 - 1, f" {worker.item_label} ", (28, 24, 40), color, True)
         if not self.workers:
@@ -167,7 +203,7 @@ class Scene:
         count = lambda *states: sum(w.state in states for w in self.workers)
         pages = max(1, len(self.pages))
         text = (f" {count('working', 'thinking')} rodando  {count('waiting', 'ask', 'blocked')} aguardando  "
-                f"{count('done')} concluidas  {count('failed')} falhas  |  Tab/setas/roda selecionam  Enter/clique abre  q sai  "
+                f"{count('done')} concluidas  {count('failed')} falhas  |  Tab/setas/roda selecionam  Enter/clique abre  Esc volta  q sai  "
                 f"pagina {self.page() + 1}/{pages}")
         if self.tick < self.notice_until:
             text = f" {self.notice}"

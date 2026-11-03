@@ -27,3 +27,10 @@ class Worker:
     subagents: int = 0
     attachable: bool = False  # the agent registry knows this session, so `claude attach` can open it
     room_title: str = ""  # title of the parent session of this split's group
+    parent: str = ""  # id of the session that dispatched this split
+    in_cwd: bool = True  # the split or its parent session ran under the viewer's working directory
+
+    @property
+    def room_key(self) -> str:
+        """What one door of the hall stands for: the parent session, or the group for records without one."""
+        return self.parent or self.group

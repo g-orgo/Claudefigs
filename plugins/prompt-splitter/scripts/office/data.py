@@ -25,7 +25,8 @@ SPAWN_GRACE_MS = 90_000
 RECORDS_PERIOD = 1.5
 AGENTS_PERIOD = 3.0
 AGENTS_TIMEOUT = 10
-RECENT_GROUPS = 10
+RECENT_GROUPS = 40
+ALL_RECORDS = 80  # the warehouse shows every directory, so this reaches further back than the side panel
 
 ACTIVITY = {
     "Bash": "Utilizando ferramentas do terminal",
@@ -286,7 +287,7 @@ def room_title_of(rec: dict, now: float | None = None) -> str:
     return title
 
 
-def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=default_read_lines) -> list[Worker]:
+def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=default_read_lines, cwd: str | None = None) -> list[Worker]:
     """Map split records, live agents and transcripts into ordered Workers. Pure apart from file reads."""
     workers: list[Worker] = []
     for position, rec in enumerate(records):
@@ -318,6 +319,8 @@ def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=d
             subagents=subagents,
             attachable=agent_dict is not None,
             room_title=room_title_of(rec),
+            parent=str(rec.get("parent") or ""),
+            in_cwd=record_in_cwd(rec, cwd),
         ))
     return order_workers(workers)
 
@@ -331,8 +334,15 @@ def full_session_id(session_id: str) -> str:
     return stems.pop() if len(stems) == 1 else ""
 
 
+def record_in_cwd(rec: dict, cwd: str | None) -> bool:
+    """True when the split or its parent session ran in that directory or under it; no cwd means every record."""
+    if cwd is None:
+        return True
+    return any(isinstance(p, str) and p and status.is_under(status.normalize_path(p), cwd) for p in (rec.get("cwd"), rec.get("parent_cwd")))
+
+
 def order_workers(workers: list[Worker]) -> list[Worker]:
-    """Keep the 10 most recent groups, newest start first so the top of the list is the latest; members by index."""
+    """Keep the most recent groups, newest start first so the top of the list is the latest; members by index."""
     groups: dict[str, list[Worker]] = {}
     for worker in workers:
         groups.setdefault(worker.group, []).append(worker)
@@ -358,6 +368,7 @@ class Poller:
 
     def __init__(self, read_lines=default_read_lines):
         self._read_lines = read_lines
+        self._cwd = status.normalize_path(os.getcwd())
         self._lock = threading.Lock()
         self._workers: list[Worker] = []
         self._agents: dict[str, dict] = {}
@@ -383,7 +394,7 @@ class Poller:
         if mtime == self._records_mtime:
             return
         try:
-            self._records = status.load_records(None)
+            self._records = status.load_records(None, ALL_RECORDS)
             self._records_mtime = mtime
         except Exception:
             pass  # keep the last good records
@@ -403,7 +414,7 @@ class Poller:
                 if now >= next_agents:
                     self._read_agents()
                     next_agents = now + AGENTS_PERIOD
-                workers = build_workers(self._records, self._agents, now * 1000.0, self._read_lines)
+                workers = build_workers(self._records, self._agents, now * 1000.0, self._read_lines, self._cwd)
                 with self._lock:
                     self._workers = workers
             except Exception:

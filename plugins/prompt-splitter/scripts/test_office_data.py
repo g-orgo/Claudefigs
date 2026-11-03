@@ -185,10 +185,10 @@ class Ordering(unittest.TestCase):
         names = [w.id for w in data.order_workers(items)]
         self.assertEqual(names, ["old1", "old2", "live1", "live2"])
 
-    def test_only_ten_recent_groups(self):
-        items = [self.worker(f"g{i}", 1, "done", 1000 + i) for i in range(12)]
+    def test_only_the_recent_groups(self):
+        items = [self.worker(f"g{i}", 1, "done", 1000 + i) for i in range(data.RECENT_GROUPS + 2)]
         out = data.order_workers(items)
-        self.assertEqual(len(out), 10)
+        self.assertEqual(len(out), data.RECENT_GROUPS)
         self.assertNotIn("g0", {w.group for w in out})
 
     def test_newest_group_first_within_rank(self):

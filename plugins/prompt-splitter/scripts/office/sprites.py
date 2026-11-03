@@ -101,15 +101,18 @@ LOW = ["..otTotKKtoTto..", "..otoTtKKtToto..", "...otoTTTToto..."]
 # name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx).
 # Body rows from index FRONT_ROW on are drawn after the desk, resting on it.
 FRONT_ROW = 6
-ARM_UP = (-9, 13, ["oso", "oso", "oTo", "oTo", "oTo", "oto", "oto", "oto", "oto"])
-ARM_UP_L = (-9, 0, ["oso", "oso", "oTo", "oTo", "oTo", "oto", "oto", "oto", "oto"])
 CUP_UP = (-2, 12, ["oooo.", "occoo", "occ.o", "oooo.", "oTo", "oTo"])
 CUP_LOW = (3, 12, ["oooo.", "occoo", "occ.o", "oooo."])
 PHONE = (-6, 14, ["ooo", "ono", "ono", "oso", "oTo", "oTo", "oto"])
 CHIN = (-1, 11, ["oso", "oso", "oTo", "oTo", "oto"])
 sit = [SHOULDERS, *TORSO, *LOW]
 hold = [SHOULDERS, *TORSO, "..osoWWWWWWoso..", "...ooWggWWWoo...", "....oWWggWWo...."]
+standing = [SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS]
+HAND = (2, 12, ["oso", "oTo"])
 POSES = {
+    "look": (9, [(sit, 0, "open", [], ""), (sit, 0, "right", [], ""), (sit, 1, "open", [], ""), (sit, 0, "blink", [], "")]),
+    "chat": (6, [(standing, 0, "open", [], ""), (standing, 1, "happy", [HAND], ""), (standing, 0, "right", [HAND], ""), (standing, 1, "open", [], "")]),
+    "bob": (5, [(standing, 0, "happy", [], ""), (standing, 1, "open", [], "")]),
     "stand": (7, [([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
     "walk": (2, [([SHOULDERS, *TORSO, *ARMS_DOWN, *STEP_A], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], ""),
                  ([SHOULDERS, *TORSO, *ARMS_DOWN, *STEP_B], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
@@ -119,9 +122,7 @@ POSES = {
     "read": (8, [(hold, 0, "down", [], ""), (hold, 1, "down", [], ""), (hold, 1, "down", [], ""), (hold, 0, "open", [], "")]),
     "think": (10, [(sit, 0, "open", [CHIN], "dots"), (sit, 1, "right", [CHIN], "dots")]),
     "phone": (6, [(sit, 0, "open", [PHONE], ""), (sit, 1, "happy", [PHONE], "")]),
-    "raise": (5, [(sit, 0, "open", [ARM_UP], "ask"), (sit, 1, "open", [(ARM_UP[0], 14, ARM_UP[2])], "ask")]),
     "coffee": (12, [(sit, 0, "happy", [CUP_LOW], "done"), (sit, 1, "blink", [CUP_UP], "steam"), (sit, 0, "open", [CUP_LOW], "done")]),
-    "stretch": (10, [(sit, 0, "happy", [ARM_UP, ARM_UP_L], "done"), (sit, 1, "blink", [ARM_UP, ARM_UP_L], "done"), (sit, 0, "open", [], "done")]),
     "nap": (14, [(sit, 6, "blink", [], "zzz"), (sit, 7, "blink", [], "zzz")]),
     "slump": (14, [(sit, 6, "blink", [], "fail"), (sit, 7, "blink", [], "fail")]),
 }

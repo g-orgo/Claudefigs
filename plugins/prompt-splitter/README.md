@@ -41,30 +41,28 @@ O painel lista os splits desta sessão. `/splits` abre o painel em qualquer larg
 
 ## Escritório dos splits (`claude split` ou `claude --splits`)
 
-`claude split` e `claude --splits` abrem um escritório animado em tela cheia, que só observa; para escrever, clique no balão e a sessão abre em outra janela. É um programa próprio (`scripts/claude_office.py`), então não existe área de escrita e nenhuma sessão do Claude é iniciada. Precisa só de um terminal com truecolor.
+`claude split` e `claude --splits` abrem um escritório animado em tela cheia, somente leitura. É um programa próprio (`scripts/claude_office.py`), então não existe área de escrita e nenhuma sessão do Claude é iniciada. Precisa só de um terminal com truecolor.
 
-Cada execução de split vira uma sala: um grupo com 2 itens é uma sala com 2 pessoas trabalhando. A sala tem piso de cor própria, paredes nos dois fundos, porta e uma placa com o título da sessão de origem, a data e a quantidade de itens (`03/11 13:11, 2 itens`), e o tamanho dela acompanha o número de itens. Fora das salas fica o piso do corredor. Quem espera outro split anda só dentro da própria sala, sem atravessar parede.
+A primeira tela é o corredor do diretório atual: uma porta por sessão, com vidraça para ver os personagens lá dentro, a label resumida da sessão e uma luz de estado (verde rodando, amarela aguardando, vermelha com falha, cinza ociosa). Só aparecem as sessões cujo split ou sessão de origem rodou neste diretório ou abaixo dele. O corredor também tem a copa, com café e água.
 
-Cada split é um personagem em câmera isométrica, com uma mesa própria. Acima dele fica um balão com o final da atividade da sessão, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
+A porta de enrolar leva à warehouse, com todas as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
 
 | Estado do split | O que o personagem faz |
 | --- | --- |
-| Rodando | digita, lê um papel ou fala ao telefone conforme a ferramenta em uso; a tela do monitor acompanha |
+| Rodando | digita, lê um papel ou fala ao telefone conforme a ferramenta em uso; a tela do monitor acompanha, e de vez em quando ele olha em volta ou toma um gole de café |
 | Pensando | mão no queixo, balãozinho de reticências |
 | Esperando outro split | levanta, vai até a mesa de quem está trabalhando e fica de caneca na mão; os dois trocam reticências e coraçõezinhos |
-| Aguardando você | levanta a mão, com `?` ou `!` |
-| Concluído | fica ocioso: toma café, se espreguiça ou cochila |
+| Aguardando você | olha em volta na mesa, com `?` ou `!` |
+| Concluído | vive o dia: toma café, cochila, lê ou fala ao telefone na mesa, passeia pela sala, visita um colega para conversar e sai pela porta para a copa, onde quem estiver lá também conversa; o balão avisa quando saiu |
 | Falhou | cabeça na mesa, com um X |
 
-Clique em um balão para selecionar o split e abrir a sessão em uma nova janela do Konsole, no diretório dela e com o campo de texto para continuar a conversa; Enter faz o mesmo com o split selecionado. Sessões que o `claude agents` conhece abrem com `claude attach <id>`, inclusive as encerradas, que acordam ao abrir. As que saíram do registro abrem com `claude --resume <id completo>`, lido da transcrição. Um split que ainda não começou não tem o que abrir e só mostra um aviso no rodapé.
-
-Teclas: Tab, setas e a roda do mouse selecionam, `q` ou Ctrl+C saem. As salas mais recentes vêm primeiro, e a lista para no primeiro e no último split em vez de dar a volta, inclusive na roda. Quando não cabe tudo, a seleção troca de página: as quebras caem entre salas, e só uma sala maior que a página inteira se divide, com `parte 2/4` na placa. Abaixo de 36x28 o programa pede para aumentar o terminal. Como o programa recebe o mouse, para selecionar texto na tela segure Shift ao arrastar.
+Teclas: Tab, setas e a roda do mouse selecionam, `q` ou Ctrl+C saem. As salas mais recentes vêm primeiro, e a lista para no primeiro e no último split em vez de dar a volta, inclusive na roda. Quando não cabe tudo, a seleção troca de página: as quebras caem entre salas, e só uma sala maior que a página inteira se divide, com `parte 2/4` na placa. Abaixo de 36x28 o programa pede para aumentar o terminal. Como o programa recebe o mouse, para selecionar texto na tela segure Shift ao arrastar. `w` vai à warehouse e Esc ou Backspace voltam.
 
 Mouse: clicar em um balão seleciona o split e abre a sessão; a roda move a seleção com a mesma regra das setas. Como o programa captura o mouse, para copiar texto da tela segure Shift ao arrastar.
 
 Enter e clique abrem a sessão no diretório do split, sempre com a caixa de texto para continuar a conversa. Sessão que o `claude agents` conhece, viva ou encerrada, abre com `claude attach <id>`, que acorda a encerrada. Sessão que saiu do registro (depois de um `claude rm`, por exemplo) abre com `claude --resume <id completo>`, lido da transcrição. Um split que ainda não começou não tem o que abrir, e o rodapé avisa.
 
-Opções: `--demo` mostra splits de exemplo; `--snapshot arquivo.png --size 200x60 --tick 80` grava um quadro; `--bench N` mede o tempo por quadro.
+Opções: `--demo` mostra splits de exemplo; `--snapshot arquivo.png --size 200x60 --tick 80 --view hall|warehouse|room` grava um quadro; `--bench N` mede o tempo por quadro.
 
 O comando vem do wrapper `scripts/claude-split.bash`, carregado pelo `~/.bashrc`, que repassa qualquer outro uso ao `claude` real:
 

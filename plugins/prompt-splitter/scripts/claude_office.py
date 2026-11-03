@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from office.data import Poller, full_session_id  # noqa: E402
 from office.demo import DemoSource  # noqa: E402
-from office.scene import Scene  # noqa: E402
+from office.office import Office  # noqa: E402
 from office.term import Frame, Screen, diff  # noqa: E402
 
 FRAME_S = 1 / 8
@@ -69,7 +69,7 @@ def session_command(worker) -> list[str] | None:
     return ["claude", "--resume", session_id] if session_id else None
 
 
-def open_session(scene: Scene, worker) -> None:
+def open_session(scene, worker) -> None:
     """Opens the split in a new Konsole, in its directory, ready to continue; failures only show a notice."""
     command = session_command(worker)
     if command is None:
@@ -83,7 +83,7 @@ def open_session(scene: Scene, worker) -> None:
         scene.notify("Nao foi possivel abrir o Konsole")
 
 
-def handle_key(scene: Scene, key: str) -> None:
+def handle_key(scene, key: str) -> None:
     """Applies one key or mouse report to the scene."""
     mouse = parse_mouse(key)
     if mouse is not None:
@@ -95,16 +95,21 @@ def handle_key(scene: Scene, key: str) -> None:
         elif button == WHEEL_DOWN:
             scene.select(1)
         elif button == LEFT_BUTTON:
-            worker = scene.worker_at(col, row)
+            worker = scene.click(col, row)
             if worker is not None:
-                scene.selected_id = worker.id
                 open_session(scene, worker)
     elif key in NEXT:
         scene.select(1)
     elif key in PREVIOUS:
         scene.select(-1)
-    elif key in ("\r", "\n") and scene.selected():
-        open_session(scene, scene.selected())
+    elif key in ("\r", "\n"):
+        worker = scene.press()
+        if worker is not None:
+            open_session(scene, worker)
+    elif key in ("\x1b", "\x7f", "b"):
+        scene.back()
+    elif key in ("w", "W"):
+        scene.toggle_warehouse()
 
 
 def write_png(frame: Frame, path: str) -> None:
@@ -127,8 +132,12 @@ def write_png(frame: Frame, path: str) -> None:
 
 def offline(args: argparse.Namespace, source) -> int:
     cols, rows = parse_size(args.size)
-    scene = Scene(cols, rows)
+    scene = Office(cols, rows)
     scene.set_workers(source.snapshot())
+    if args.view == "warehouse":
+        scene.toggle_warehouse()
+    elif args.view == "room":
+        scene.press()
     if args.snapshot:
         for _ in range(args.tick):
             scene.step()
@@ -153,7 +162,7 @@ def run(source) -> int:
     for signum in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
         signal.signal(signum, lambda *_: sys.exit(0))
     screen = Screen()
-    scene = Scene(*shutil.get_terminal_size())
+    scene = Office(*shutil.get_terminal_size())
     source.start()
     pending = ""
     try:
@@ -168,7 +177,11 @@ def run(source) -> int:
             scene.step()
             screen.present(scene.render())
             wait = max(0, FRAME_S - (time.monotonic() - started))
-            if select.select([sys.stdin], [], [], wait)[0]:
+            ready = select.select([sys.stdin], [], [], wait)[0]
+            if not ready and pending == "\x1b":
+                pending = ""  # nothing followed it, so it was the Esc key and not the start of a sequence.
+                handle_key(scene, "\x1b")
+            if ready:
                 keys = keys_of(pending + os.read(sys.stdin.fileno(), 1024).decode(errors="ignore"))
                 pending = keys.pop() if keys and PARTIAL.fullmatch(keys[-1]) else ""
                 for key in keys:
@@ -182,11 +195,12 @@ def run(source) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Escritorio animado dos splits: clique em um balao para abrir a sessao.")
+    parser = argparse.ArgumentParser(description="Escritorio animado dos splits: entre por uma porta e clique em um balao para abrir a sessao.")
     parser.add_argument("--demo", action="store_true", help="mostra splits de exemplo")
     parser.add_argument("--snapshot", help="grava um quadro em PNG e sai")
     parser.add_argument("--bench", type=int, default=0, help="mede o tempo de N quadros e sai")
     parser.add_argument("--size", default="200x60", help="tamanho CxL para --snapshot e --bench")
+    parser.add_argument("--view", default="hall", choices=("hall", "warehouse", "room"), help="tela inicial de --snapshot e --bench")
     parser.add_argument("--tick", type=int, default=80, help="quadros simulados antes do --snapshot")
     args = parser.parse_args()
     source = DemoSource() if args.demo else Poller()

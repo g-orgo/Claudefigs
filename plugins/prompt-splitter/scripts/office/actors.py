@@ -2,6 +2,7 @@
 import zlib
 
 from . import props, sprites
+from .life import Life, work_glance
 from .model import Worker
 
 BEAT = 16  # the waiter/target interaction has three beats of this many ticks.
@@ -9,8 +10,6 @@ STAND = (36, 6)  # foot point beside the own desk, relative to its corner.
 SLOTS = [(46, 26), (16, 30), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
 POSE = {"code": "type", "term": "type", "web": "type", "doc": "read", "delegate": "phone"}
 SCREEN = {"code": "code", "term": "term", "web": "web", "doc": "doc", "delegate": "term"}
-IDLE = ("coffee", "stretch", "nap")
-IDLE_TICKS = 160
 CHAIR = (90, 96, 130)
 BODY_H = 23
 
@@ -42,6 +41,10 @@ class Actor:
         self.flip = False
         self.target: "Actor | None" = None
         self.visitors = 0
+        self.life = Life(self.seed)
+        self.away = False  # out of the room, so only the hall can draw it.
+        self.hall_foot: tuple[int, int] | None = None
+        self.hall_flip = False
 
     @property
     def stand_point(self) -> tuple[int, int]:
@@ -49,7 +52,7 @@ class Actor:
 
     @property
     def wants_seat(self) -> bool:
-        return self.worker.state != "waiting"
+        return self.worker.state != "waiting" and self.life.kind in ("work", "desk")
 
     def place(self, desk: tuple[int, int]) -> None:
         """Puts the actor at its destination with no walking: first sight or a new desk."""
@@ -83,28 +86,40 @@ class Actor:
         if self.wants_seat and self.foot == self.stand_point:
             self.seated, self.moving = True, False
 
-    def appearance(self, tick: int) -> tuple[str, str, str, str]:
-        """Returns pose, eyes, icon and monitor screen for this tick."""
+    def seat_look(self, tick: int) -> tuple[str, str, str, str]:
+        """Pose, eyes, icon and monitor screen of the character sitting at its desk."""
         w = self.worker
-        beat = (tick // BEAT) % 3
-        greet = self.visitors > 0 and beat == 1
-        if not self.seated:
-            if self.moving:
-                return "walk", "", "", "idle"
-            if self.target is None:
-                return "wait", "", "dots", "idle"
-            if beat == 0:
-                return "wait", "", "dots", "idle"
-            return "wait", "happy" if beat == 2 else "", "heart" if beat == 2 else "", "idle"
+        greet = self.visitors > 0 and (tick // BEAT) % 3 == 1
+        eyes, heart = ("happy", "heart") if greet else ("", "")
         if w.state == "working":
-            return POSE.get(w.activity, "type"), "happy" if greet else "", "heart" if greet else "", SCREEN.get(w.activity, "code")
+            return work_glance(self.seed, tick) or POSE.get(w.activity, "type"), eyes, heart, SCREEN.get(w.activity, "code")
         if w.state == "thinking":
-            return "think", "happy" if greet else "", "heart" if greet else "dots", "code"
-        if w.state in ("ask", "blocked"):
-            return "raise", "", "ask" if w.state == "ask" else "alert", "idle"
+            return "think", eyes, heart or "dots", "code"
+        if w.state == "ask":
+            return "look", "", "ask", "idle"
         if w.state == "failed":
             return "slump", "", "fail", "idle"
-        return IDLE[(self.seed + tick // IDLE_TICKS) % len(IDLE)], "", "done", "idle"
+        if w.state == "waiting":
+            return "look", "", "dots", "idle"
+        return self.life.pose, eyes, heart or ("alert" if w.state == "blocked" else "done"), "idle"
+
+    def stand_look(self, tick: int) -> tuple[str, str, str, str]:
+        """Pose, eyes, icon and monitor screen of the character away from its chair."""
+        beat = (tick // BEAT) % 3
+        if self.moving:
+            return "walk", "", "", "idle"
+        if self.life.kind == "visit" and self.target is not None:
+            return "chat", "", ("dots", "", "heart")[beat], "idle"
+        if self.life.kind == "roam":
+            return "bob" if (self.seed + tick // 24) % 3 == 0 else "stand", "", "", "idle"
+        if self.target is None:
+            return "wait", "", "dots", "idle"
+        if beat == 0:
+            return "wait", "", "dots", "idle"
+        return "wait", "happy" if beat == 2 else "", "heart" if beat == 2 else "", "idle"
+
+    def appearance(self, tick: int) -> tuple[str, str, str, str]:
+        return self.seat_look(tick) if self.seated else self.stand_look(tick)
 
     def head(self) -> tuple[int, int]:
         if self.seated:
@@ -125,12 +140,18 @@ class Actor:
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "front", eyes=eyes)
 
+    def note(self) -> str:
+        """What the bubble says about a character that is not at its desk by its own plan."""
+        return "foi tomar um cafe" if self.life.kind == "out" else ""
+
     def draw_body(self, canvas: sprites.Canvas, tick: int) -> None:
         pose, eyes, _, _ = self.appearance(tick)
         hx, hy = self.head()
         sprites.draw(canvas, hx, hy, self.look, pose, tick, flip=self.flip, eyes=eyes)
 
     def draw_icons(self, canvas: sprites.Canvas, tick: int) -> None:
+        if self.away:
+            return
         pose, _, icon, _ = self.appearance(tick)
         hx, hy = self.head()
         fx = sprites.frame_of(pose, tick)[4]
