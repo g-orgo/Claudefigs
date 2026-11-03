@@ -43,9 +43,9 @@ O painel lista os splits desta sessão. `/splits` abre o painel em qualquer larg
 
 `claude split` e `claude --splits` abrem um escritório animado em tela cheia, somente leitura. É um programa próprio (`scripts/claude_office.py`), então não existe área de escrita e nenhuma sessão do Claude é iniciada. Precisa só de um terminal com truecolor.
 
-A primeira tela é o corredor do diretório atual: uma porta por sessão, com vidraça para ver os personagens lá dentro, a label resumida da sessão e uma luz de estado (verde rodando, amarela aguardando, vermelha com falha, cinza ociosa). Só aparecem as sessões cujo split ou sessão de origem rodou neste diretório ou abaixo dele. O corredor também tem a copa, com café e água.
+A primeira tela é o corredor do diretório atual. Em telas a partir de 170x46 as salas ficam nas paredes laterais, com a mesa no centro; em telas menores elas viram uma lista, e a mesa continua presente em todas as páginas. Cada sessão tem uma porta com vidraça para ver os personagens lá dentro, a label resumida da sessão e uma luz de estado (verde rodando, amarela aguardando, vermelha com falha, cinza ociosa). Só aparecem as sessões cujo split ou sessão de origem rodou neste diretório ou abaixo dele. A mesa tem máquina de café, planta e bebedouro, e os personagens andam por rotas, desviando de mesas, paredes e balcão.
 
-A porta de enrolar leva à warehouse, com todas as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
+A caixa vermelha sobre a mesa, ou a tecla `w`, leva à warehouse, com todas as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
 
 | Estado do split | O que o personagem faz |
 | --- | --- |

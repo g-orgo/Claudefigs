@@ -43,7 +43,12 @@ class Actor:
         self.visitors = 0
         self.life = Life(self.seed)
         self.away = False  # out of the room, so only the hall can draw it.
+        self.router = None  # the view's route finder.
+        self.path: list[tuple[int, int]] = []
+        self.path_goal: tuple[int, int] | None = None
         self.hall_foot: tuple[int, int] | None = None
+        self.hall_path: list[tuple[int, int]] = []
+        self.hall_goal: tuple[int, int] | None = None
         self.hall_flip = False
 
     @property
@@ -60,11 +65,13 @@ class Actor:
         self.seated = self.wants_seat
         self.foot = self.goal = self.stand_point
         self.moving = False
+        self.path, self.path_goal = [], self.goal
 
     def settle(self) -> None:
         """Places a waiter directly at the goal chosen this step."""
         if not self.wants_seat:
             self.foot = self.goal
+            self.path, self.path_goal = [], self.goal
 
     def step(self) -> None:
         if self.seated and self.wants_seat:
@@ -72,12 +79,18 @@ class Actor:
             return
         if self.seated:
             self.seated, self.foot = False, self.stand_point
-        dx, dy = self.goal[0] - self.foot[0], self.goal[1] - self.foot[1]
-        self.moving = (dx, dy) != (0, 0)
+            self.path_goal = None
+        if self.goal != self.path_goal:
+            self.path = self.router(self.foot, self.goal) if self.router else [self.goal]
+            self.path_goal = self.goal
+        self.moving = bool(self.path)
         if self.moving:
+            dx, dy = self.path[0][0] - self.foot[0], self.path[0][1] - self.foot[1]
             self.foot = (self.foot[0] + max(-2, min(2, dx)), self.foot[1] + max(-2, min(2, dy)))
             if dx:
                 self.flip = dx > 0
+            if self.foot == self.path[0]:
+                self.path.pop(0)
         elif self.target is not None:
             # The wait pose looks right unflipped, so it flips to look at someone on the left.
             self.flip = self.target.desk[0] + 28 < self.foot[0]

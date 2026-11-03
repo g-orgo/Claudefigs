@@ -5,7 +5,10 @@ from office import data, sprites
 from office.demo import DemoSource
 from office.hall import BACK, WAREHOUSE, doors_of
 from office.model import Worker
+from office.hallplan import Plan
 from office.office import Office
+from office.paths import Grid, desk_blocks
+from office.scene import Scene
 
 
 def worker(wid, parent, state="done", in_cwd=True, index=1, group="g"):
@@ -69,6 +72,72 @@ class NavigationTests(unittest.TestCase):
         self.office.press()
         self.office.set_workers([worker("b", "there", in_cwd=False)])
         self.assertEqual(self.office.mode, "hall")
+
+
+class RouteTests(unittest.TestCase):
+    def test_route_goes_around_an_obstacle(self):
+        grid = Grid(120, 60, lambda x, y: 40 <= x <= 60 and y <= 44)
+        path = grid.route((20, 8), (100, 8))
+        self.assertEqual(path[-1], (100, 8))
+        self.assertTrue(any(y > 44 for _, y in path))
+
+    def test_route_falls_back_to_the_goal_when_walled_off(self):
+        grid = Grid(120, 60, lambda x, y: 40 <= x <= 60)
+        self.assertEqual(grid.route((4, 8), (100, 8)), [(100, 8)])
+
+    def test_nearest_free_leaves_an_obstacle(self):
+        grid = Grid(120, 60, lambda x, y: x < 40)
+        self.assertTrue(grid.is_free(grid.nearest_free((8, 8))))
+
+    def test_waiter_never_crosses_a_desk_on_its_way(self):
+        scene = Scene(200, 60)
+        make = lambda i, state, after=(): Worker(id=f"w{i}", session_id="s", name="n", title="t", item_label=str(i), group="g",
+                                                 index=i, cwd="", started_ms=i, state=state, after=list(after))
+        scene.set_workers([make(1, "working"), make(2, "done"), make(3, "waiting", [1])])
+        scene.step()
+        walker = scene.actors["w3"]
+        desks = [a.desk for a in scene.actors.values() if a is not walker]
+        for _ in range(200):
+            scene.step()
+            for desk in desks:
+                near_goal = max(abs(walker.foot[0] - walker.goal[0]), abs(walker.foot[1] - walker.goal[1])) <= 12
+                near_start = max(abs(walker.foot[0] - walker.stand_point[0]), abs(walker.foot[1] - walker.stand_point[1])) <= 12
+                self.assertFalse(desk_blocks(desk, *walker.foot) and not near_goal and not near_start, walker.foot)
+
+
+class PlanTests(unittest.TestCase):
+    def test_wide_screens_put_rooms_on_both_walls_and_small_ones_keep_the_list(self):
+        wide = Plan(200, 60, True)
+        self.assertTrue(wide.wide)
+        self.assertEqual(len(wide.panels), 4)
+        self.assertLess(wide.panels[0].x, wide.table[0])
+        self.assertGreater(wide.panels[1].x, wide.table[0])
+        self.assertFalse(Plan(150, 44, True).wide)
+        self.assertIsNotNone(Plan(150, 44, True).table)
+
+    def test_warehouse_stays_on_the_table_on_every_page(self):
+        office = Office(200, 60)
+        office.set_workers([worker(f"a{i}", f"p{i}") for i in range(9)])
+        hall = office.hall
+        self.assertGreater(hall.pages(), 1)
+        tx, ty = hall.plan.table
+        for _ in range(9):
+            self.assertNotIn(WAREHOUSE, hall.visible_keys())
+            self.assertEqual(hall.key_at(tx + 3, (ty + 8) // 2), WAREHOUSE)
+            hall.select(1)
+        self.assertEqual(hall.selected_key, WAREHOUSE)
+        self.assertEqual(hall.page(), hall.pages() - 1)
+
+    def test_nobody_stops_on_the_table_in_the_hall(self):
+        office = Office(170, 46)
+        office.set_workers([worker(f"a{i}", f"p{i}") for i in range(3)])
+        table = office.hall.plan
+        for _ in range(1500):
+            office.step()
+            office.render()
+            for actor in office.scene.actors.values():
+                if actor.hall_foot is not None and not actor.moving:
+                    self.assertFalse(table.blocks(*actor.hall_foot), actor.hall_foot)
 
 
 class LifeTests(unittest.TestCase):

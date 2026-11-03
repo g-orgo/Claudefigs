@@ -3,6 +3,7 @@ from . import props, rooms, sprites
 from .actors import SLOTS, Actor, resolve_target
 from .bubble import CREAM, INK, draw_bubble
 from .model import Worker
+from .paths import Grid, desk_blocks
 from .term import Frame
 
 MIN_COLS, MIN_ROWS = 36, 28
@@ -22,6 +23,7 @@ class Scene:
         self.seen = 0
         self.notice, self.notice_until = "", 0
         self._backgrounds: dict[tuple, sprites.Canvas] = {}
+        self._grids: dict[tuple, Grid] = {}
         self.resize(cols, rows)
 
     def resize(self, cols: int, rows: int) -> None:
@@ -112,9 +114,12 @@ class Scene:
                 fresh.append(actor)
             actor.visitors, actor.target = 0, None
         by_id = {a.worker.id: a for a in actors}
+        grids = {id(room): self._grid(room, [a for a in actors if room_of[a.worker.id] is room]) for room in page_rooms}
         for actor in actors:
             actor.goal = actor.stand_point
             room = room_of[actor.worker.id]
+            grid = grids[id(room)]
+            actor.router = grid.route
             door = room.clamp_foot(room.right - 12, 0)
             life = actor.life
             if life.kind == "out":
@@ -127,11 +132,11 @@ class Scene:
             if actor.away:
                 actor.away, actor.seated, actor.foot = False, False, door
             if life.kind == "roam":
-                actor.goal = room.clamp_foot(room.left + int(life.spot[0] * (room.right - room.left)), room.floor_y + int(life.spot[1] * (room.bottom - room.floor_y)))
+                actor.goal = grid.nearest_free(room.clamp_foot(room.left + int(life.spot[0] * (room.right - room.left)), room.floor_y + int(life.spot[1] * (room.bottom - room.floor_y))))
                 continue
             if life.kind == "visit" and life.mate in actors and life.mate.visitors < len(SLOTS):
                 dx, dy = SLOTS[life.mate.visitors]
-                actor.goal = room.clamp_foot(life.mate.desk[0] + dx, life.mate.desk[1] + dy)
+                actor.goal = grid.nearest_free(room.clamp_foot(life.mate.desk[0] + dx, life.mate.desk[1] + dy))
                 actor.target = life.mate
                 life.mate.visitors += 1
                 continue
@@ -141,12 +146,27 @@ class Scene:
             host = by_id.get(target.id) if target else None
             if host is not None and host.visitors < len(SLOTS):
                 dx, dy = SLOTS[host.visitors]
-                actor.goal = room_of[host.worker.id].clamp_foot(host.desk[0] + dx, host.desk[1] + dy)
+                actor.goal = grids[id(room_of[host.worker.id])].nearest_free(room_of[host.worker.id].clamp_foot(host.desk[0] + dx, host.desk[1] + dy))
                 actor.target = host
                 host.visitors += 1
         for actor in fresh:
             actor.settle()
         return actors, cells
+
+    def _grid(self, room: rooms.Room, actors: list[Actor]) -> Grid:
+        """Walkable floor of one room: inside its walls and around its desks. Cached by the room's layout."""
+        desks = tuple(a.desk for a in actors)
+        key = (room.x, room.row, room.width, room.height, room.bubble, desks)
+        if key not in self._grids:
+            if len(self._grids) >= BACKGROUND_CACHE:
+                self._grids.clear()
+
+            def blocked(x: int, y: int) -> bool:
+                outside = not (room.left + 9 <= x <= room.right - 9 and room.floor_edge(x) < y <= room.bottom - 2)
+                return outside or any(desk_blocks(desk, x, y) for desk in desks)
+
+            self._grids[key] = Grid(self.cols, max(0, self.rows - 1) * 2, blocked)
+        return self._grids[key]
 
     def step(self) -> None:
         self.tick += 1

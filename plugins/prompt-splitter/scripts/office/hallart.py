@@ -3,6 +3,7 @@ from .props import OUTLINE, fill_poly
 from .sprites import Canvas, Color
 
 BAY_W, BAY_H, DEPTH = 58, 34, 6
+PADDING = 8  # spare interior rows, so an angled window never reads outside the room.
 DOOR = (3, 7, 14, BAY_H - 8)  # column, row, width, height inside the front wall.
 WINDOW = (20, 4, BAY_W - 23, BAY_H - 10)
 WALLS = ((226, 214, 190), (206, 222, 214), (222, 208, 224), (214, 218, 234), (232, 214, 200), (210, 224, 196))
@@ -27,16 +28,17 @@ def shade(color: Color, factor: float) -> Color:
     return tuple(min(255, int(c * factor)) for c in color)
 
 
-def draw_shell(canvas: Canvas, x: int, y: int, wall: Color) -> None:
-    """The box of one office seen from outside: roof edge, right side and front wall."""
-    fill_poly(canvas, [(x, y), (x + DEPTH, y - DEPTH), (x + BAY_W + DEPTH - 1, y - DEPTH), (x + BAY_W - 1, y)], shade(wall, 1.08))
-    fill_poly(canvas, [(x + BAY_W - 1, y), (x + BAY_W + DEPTH - 1, y - DEPTH), (x + BAY_W + DEPTH - 1, y + BAY_H - DEPTH - 1), (x + BAY_W - 1, y + BAY_H - 1)], shade(wall, 0.72))
+def draw_shell(canvas: Canvas, x: int, y: int, wall: Color, roof: bool = True) -> None:
+    """The box of one office seen from outside: roof edge and right side when free standing, and the front wall."""
+    if roof:
+        fill_poly(canvas, [(x, y), (x + DEPTH, y - DEPTH), (x + BAY_W + DEPTH - 1, y - DEPTH), (x + BAY_W - 1, y)], shade(wall, 1.08))
+        fill_poly(canvas, [(x + BAY_W - 1, y), (x + BAY_W + DEPTH - 1, y - DEPTH), (x + BAY_W + DEPTH - 1, y + BAY_H - DEPTH - 1), (x + BAY_W - 1, y + BAY_H - 1)], shade(wall, 0.72))
     box(canvas, x, y, BAY_W, BAY_H, wall)
     rect(canvas, x + 1, y + BAY_H - 3, BAY_W - 2, 2, shade(wall, 0.62))
 
 
-def draw_office_front(canvas: Canvas, x: int, y: int, wall: Color) -> None:
-    draw_shell(canvas, x, y, wall)
+def draw_office_front(canvas: Canvas, x: int, y: int, wall: Color, roof: bool = True) -> None:
+    draw_shell(canvas, x, y, wall, roof)
     dx, dy, dw, dh = DOOR
     box(canvas, x + dx, y + dy, dw, dh, WOOD)
     box(canvas, x + dx + 3, y + dy + 3, dw - 6, 8, GLASS)
@@ -46,36 +48,66 @@ def draw_office_front(canvas: Canvas, x: int, y: int, wall: Color) -> None:
     box(canvas, x + wx - 1, y + wy - 1, ww + 2, wh + 2, INSIDE)
 
 
-def draw_glass(canvas: Canvas, x: int, y: int, inside: Canvas, tick: int) -> None:
-    """Copies the room's interior into the window through tinted glass with a slow moving shine."""
-    wx, wy, ww, wh = WINDOW
+def window_left(panel) -> int:
+    return BAY_W - WINDOW[0] - WINDOW[2] if panel.mirror else WINDOW[0]
+
+
+def draw_glass(canvas: Canvas, panel, inside: Canvas, tick: int) -> None:
+    """Copies the room's interior through tinted glass; the people stay upright even on an angled wall."""
+    left, wy, ww, wh = window_left(panel), WINDOW[1], WINDOW[2], WINDOW[3]
     shine = tick // 3
-    for j in range(wh):
-        for i in range(ww):
-            r, g, b = inside.rows[j][i]
+    middle = panel.shift(left + ww // 2)
+    for i in range(ww):
+        col = left + i
+        shift = panel.shift(col)
+        for j in range(wh):
+            r, g, b = inside.rows[j + shift - middle + PADDING][i]
             mix = 0.84 if (i + j - shine) % 34 > 3 else 0.62
-            canvas.put(x + wx + i, y + wy + j, (int(r * mix + GLASS[0] * (1 - mix)), int(g * mix + GLASS[1] * (1 - mix)), int(b * mix + GLASS[2] * (1 - mix))))
-    rect(canvas, x + wx + ww // 2, y + wy, 1, wh, OUTLINE)
+            canvas.put(panel.x + col, panel.y + shift + wy + j, (int(r * mix + GLASS[0] * (1 - mix)), int(g * mix + GLASS[1] * (1 - mix)), int(b * mix + GLASS[2] * (1 - mix))))
+    for j in range(wh):
+        canvas.put(panel.x + left + ww // 2, panel.y + middle + wy + j, OUTLINE)
+
+
+def draw_dark_window(flat: Canvas) -> None:
+    """An office with nobody in it: lights off behind the glass."""
+    wx, wy, ww, wh = WINDOW
+    rect(flat, wx, wy, ww, wh, (64, 70, 96))
+    rect(flat, wx + ww // 2, wy, 1, wh, OUTLINE)
+    for i in range(8):
+        rect(flat, wx + 4 + i, wy + 12 - i, 2, 1, (92, 100, 130))
+
+
+def blit_panel(canvas: Canvas, flat: Canvas, panel) -> None:
+    """Draws a flat office front onto the wall, mirrored and following the wall's slope."""
+    for col in range(BAY_W):
+        source = BAY_W - 1 - col if panel.mirror else col
+        shift = panel.shift(col)
+        for j in range(BAY_H):
+            canvas.put(panel.x + col, panel.y + shift + j, flat.rows[j][source])
 
 
 def new_interior() -> Canvas:
-    inside = Canvas(WINDOW[2], WINDOW[3], INSIDE)
-    rect(inside, 0, WINDOW[3] - 6, WINDOW[2], 6, INSIDE_FLOOR)
+    inside = Canvas(WINDOW[2], WINDOW[3] + 2 * PADDING, INSIDE)
+    rect(inside, 0, WINDOW[3] + PADDING - 6, WINDOW[2], 6 + PADDING, INSIDE_FLOOR)
     return inside
 
 
 def draw_desk_edge(inside: Canvas) -> None:
     """The desks seen through the glass, hiding the characters' lower bodies."""
-    rect(inside, 0, WINDOW[3] - 5, WINDOW[2], 1, OUTLINE)
-    rect(inside, 0, WINDOW[3] - 4, WINDOW[2], 3, (226, 184, 136))
-    rect(inside, 0, WINDOW[3] - 1, WINDOW[2], 1, OUTLINE)
+    top = WINDOW[3] + PADDING - 5
+    rect(inside, 0, top, WINDOW[2], 1, OUTLINE)
+    rect(inside, 0, top + 1, WINDOW[2], 3, (226, 184, 136))
+    rect(inside, 0, top + 4, WINDOW[2], 1, OUTLINE)
+    rect(inside, 0, top + 5, WINDOW[2], PADDING, INSIDE_FLOOR)
 
 
-def draw_lamp(canvas: Canvas, x: int, y: int, status: str, tick: int) -> None:
+def draw_lamp(canvas: Canvas, panel, status: str, tick: int) -> None:
     color = LAMPS[status]
     if status == "wait" and (tick // 6) % 2:
         color = shade(color, 0.6)
-    box(canvas, x + DOOR[0] + 5, y + 2, 4, 4, color)
+    col = DOOR[0] + 5
+    col = BAY_W - col - 4 if panel.mirror else col
+    box(canvas, panel.x + col, panel.y + panel.shift(col) + 2, 4, 4, color)
 
 
 def draw_roller_front(canvas: Canvas, x: int, y: int, back: bool) -> None:
@@ -90,25 +122,39 @@ def draw_roller_front(canvas: Canvas, x: int, y: int, back: bool) -> None:
         rect(canvas, x + rx + i, y + ry + rh - 2, 2, 1, stripe)
 
 
-def draw_break_corner(canvas: Canvas, x: int, y: int, tick: int) -> None:
-    """Counter with a coffee machine, a water cooler and a plant."""
-    rect(canvas, x + 2, y + BAY_H + 2, BAY_W - 4, 1, (120, 128, 150))
-    box(canvas, x + 2, y + 14, 30, 19, (196, 150, 108))
-    box(canvas, x, y + 11, 34, 4, (234, 226, 214))
-    box(canvas, x + 6, y, 13, 12, (72, 76, 96))
-    box(canvas, x + 9, y + 3, 7, 3, (120, 220, 200))
-    box(canvas, x + 10, y + 8, 5, 3, (250, 250, 250))
-    if (tick // 4) % 2:
-        rect(canvas, x + 12, y + 5, 1, 2, (250, 250, 250))
-    box(canvas, x + 38, y + 19, 11, 14, (232, 236, 244))
-    box(canvas, x + 39, y + 5, 9, 15, (150, 214, 248))
-    level = 7 + (tick // 90) % 5
-    rect(canvas, x + 40, y + 6, 7, level, (205, 236, 252))
-    rect(canvas, x + 40, y + 24, 3, 2, (90, 150, 230))
-    rect(canvas, x + 45, y + 24, 3, 2, (235, 90, 90))
-    box(canvas, x + 22, y + 4, 8, 7, (200, 130, 90))
+def draw_table(canvas: Canvas, x: int, y: int, tick: int, selected: bool) -> None:
+    """The central table: red parcel to the warehouse, coffee machine with a green led, plant and water cooler."""
+    box(canvas, x + 2, y + 17, 42, 18, (196, 150, 108))
+    box(canvas, x, y + 14, 46, 4, (234, 226, 214))
+    parcel = (240, 90, 90) if not selected else (255, 130, 110)
+    box(canvas, x + 2, y + 7, 10, 8, parcel)
+    rect(canvas, x + 6, y + 8, 2, 6, (250, 214, 150))
+    box(canvas, x + 15, y + 2, 13, 13, (72, 76, 96))
+    box(canvas, x + 17, y + 4, 7, 3, (120, 220, 200))
+    box(canvas, x + 18, y + 9, 5, 4, (250, 250, 250))
+    led = (90, 240, 130) if (tick // 6) % 2 else (40, 110, 70)
+    rect(canvas, x + 25, y + 4, 2, 2, led)
+    box(canvas, x + 32, y + 8, 8, 7, (200, 130, 90))
     for dx, dy in ((-3, -3), (0, -6), (4, -5), (7, -3), (2, -3)):
-        rect(canvas, x + 24 + dx, y + 4 + dy, 4, 3, (92, 186, 118))
+        rect(canvas, x + 34 + dx, y + 8 + dy, 4, 3, (92, 186, 118))
+    box(canvas, x + 48, y + 21, 11, 14, (232, 236, 244))
+    box(canvas, x + 49, y + 7, 9, 15, (150, 214, 248))
+    rect(canvas, x + 50, y + 8, 7, 7 + (tick // 90) % 5, (205, 236, 252))
+    rect(canvas, x + 50, y + 26, 3, 2, (90, 150, 230))
+    rect(canvas, x + 55, y + 26, 3, 2, (235, 90, 90))
+
+
+def draw_side_walls(canvas: Canvas, plan) -> None:
+    """Back wall with chamfers and the two side walls, for the wide floor plan."""
+    tone, edge_tone = (168, 186, 216), (120, 128, 150)
+    for x in range(canvas.width):
+        edge = min(plan.floor_edge(x), canvas.height)
+        rect(canvas, x, 0, 1, edge, tone if x < canvas.width // 2 else shade(tone, 1.06))
+        canvas.put(x, edge, OUTLINE)
+        canvas.put(x, edge + 1, edge_tone)
+    for y in range(canvas.height):
+        for x in (plan.side_wall, canvas.width - 1 - plan.side_wall):
+            canvas.put(x, y, OUTLINE)
 
 
 def draw_warehouse_floor(canvas: Canvas) -> None:

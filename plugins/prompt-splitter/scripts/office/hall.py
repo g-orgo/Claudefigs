@@ -3,17 +3,14 @@ from dataclasses import dataclass, field
 
 from . import hallart, sprites
 from .bubble import CREAM, INK, clean, clip, width_of
-from .life import IDLE_STATES
+from .hallplan import TABLE_W, TOP_PX, Plan
 from .model import Worker
 from .term import Frame
 
-CELL_W, CELL_H = 64, 48
-TOP_PX = 10  # label rows and roof edge above the front wall.
 WAREHOUSE, BACK = "@warehouse", "@back"
 FOOTER_FG, FOOTER_BG = (225, 228, 240), (38, 34, 54)
 MARK = (255, 214, 90)
 MIN_COLS, MIN_ROWS = 36, 28
-SPOTS = ((12, 38), (43, 38), (26, 44), (56, 42))  # foot points around the break corner.
 
 
 @dataclass
@@ -56,18 +53,17 @@ class Hall:
         self.selected_key: str | None = None
         self.actors: dict = {}
         self.notice, self.notice_until, self.tick = "", 0, 0
+        self._page = 0
         self.resize(cols, rows)
 
     def resize(self, cols: int, rows: int) -> None:
         self.cols, self.rows = cols, rows
-        self.n_cols = max(1, cols // CELL_W)
-        self.n_rows = max(1, max(0, rows - 1) * 2 // CELL_H)
-        self.per_page = self.n_cols * self.n_rows
-        self.has_corner = not self.warehouse and self.per_page >= 3
-        self.page_size = self.per_page - (1 if self.has_corner else 0)
-        self.left = (cols - self.n_cols * CELL_W) // 2 + 2
-        self.top = (max(0, rows - 1) * 2 - self.n_rows * CELL_H) // 2
+        self.plan = Plan(cols, rows, not self.warehouse)
+        self.page_size = max(1, len(self.plan.panels))
+        self.grid = self.plan.grid() if rows >= MIN_ROWS and cols >= MIN_COLS else None
         self._floor = None
+        for actor in self.actors.values():
+            actor.hall_foot, actor.hall_goal, actor.hall_path = None, None, []
 
     def set_doors(self, doors: list[Door]) -> None:
         first_doors = doors and not self.doors  # the list starts empty, so this is the first real selection.
@@ -75,37 +71,48 @@ class Hall:
         if first_doors or self.selected_key not in self.entry_keys():
             self.selected_key = self.entry_keys()[0]
 
+    def door_keys(self) -> list[str]:
+        """What takes a place on the wall: sessions, plus the way back when inside the warehouse."""
+        return [d.key for d in self.doors] + ([BACK] if self.warehouse else [])
+
     def entry_keys(self) -> list[str]:
-        return [d.key for d in self.doors] + [BACK if self.warehouse else WAREHOUSE]
+        return self.door_keys() + ([] if self.warehouse else [WAREHOUSE])
 
     def select(self, delta: int) -> None:
         keys = self.entry_keys()
-        self.selected_key = keys[max(0, min(len(keys) - 1, keys.index(self.selected_key) + delta))]
+        new = keys[max(0, min(len(keys) - 1, keys.index(self.selected_key) + delta))]
+        self._page = self.page()
+        self.selected_key = new
 
     def page(self) -> int:
-        return self.entry_keys().index(self.selected_key) // self.page_size if self.selected_key in self.entry_keys() else 0
+        keys = self.door_keys()
+        if self.selected_key in keys:
+            return keys.index(self.selected_key) // self.page_size
+        return min(self._page, max(0, self.pages() - 1))  # the table's parcel is on every page, so it stays here.
 
     def pages(self) -> int:
-        return (len(self.entry_keys()) + self.page_size - 1) // self.page_size
+        return max(1, (len(self.door_keys()) + self.page_size - 1) // self.page_size)
 
     def visible_keys(self) -> list[str]:
         start = self.page() * self.page_size
-        return self.entry_keys()[start:start + self.page_size]
+        return self.door_keys()[start:start + self.page_size]
 
     def cell_xy(self, index: int) -> tuple[int, int]:
-        """Front wall corner of a grid cell; TOP_PX holds the labels above it."""
-        return self.left + (index % self.n_cols) * CELL_W, self.top + (index // self.n_cols) * CELL_H + TOP_PX
-
-    def corner_xy(self) -> tuple[int, int]:
-        return self.cell_xy(self.per_page - 1)
+        panel = self.plan.panels[index]
+        return panel.x, panel.y
 
     def key_at(self, col: int, row: int) -> str | None:
-        """The entry whose label or front wall covers this cell."""
+        """The entry whose label or front wall covers this cell, or the warehouse parcel on the table."""
         if row >= self.rows - 1:
             return None
+        if self.plan.table is not None:
+            tx, ty = self.plan.table
+            if tx <= col < tx + 14 and ty - 2 <= row * 2 < ty + 16:
+                return WAREHOUSE
         for index, key in enumerate(self.visible_keys()):
-            x, y = self.cell_xy(index)
-            if x <= col < x + hallart.BAY_W + hallart.DEPTH and y - TOP_PX <= row * 2 < y + hallart.BAY_H:
+            panel = self.plan.panels[index]
+            shift = panel.shift(max(0, min(hallart.BAY_W - 1, col - panel.x)))
+            if panel.x <= col < panel.x + hallart.BAY_W + hallart.DEPTH and panel.y - TOP_PX <= row * 2 < panel.y + shift + hallart.BAY_H:
                 return key
         return None
 
@@ -127,59 +134,90 @@ class Hall:
         return out
 
     def step(self) -> None:
-        """Walks everyone who left a room to the break corner, and back to their door when the plan ends."""
+        """Walks whoever left a room to the table along a route, and back to their door when the plan ends."""
         self.tick += 1
-        if not self.has_corner:
+        if self.plan.table is None or self.grid is None:
             return
-        cx, cy = self.corner_xy()
-        out = sorted(self._out_of_room(), key=lambda item: item[0].seed)
+        spots = self.plan.spots()
         taken = 0
-        for actor, index in out:
-            x, y = self.cell_xy(index)
-            front = (x + hallart.DOOR[0] + 7, y + hallart.BAY_H + 1)
+        for actor, index in sorted(self._out_of_room(), key=lambda item: item[0].seed):
+            front = self.grid.nearest_free(self.plan.panels[index].door)
             if actor.hall_foot is None:
                 actor.hall_foot = front
             leaving = actor.life.kind != "out"
             if leaving:
                 goal = front
-            elif taken < len(SPOTS):
-                goal = (cx + SPOTS[taken][0], cy + SPOTS[taken][1])
-                taken += 1
+            elif taken < len(spots):
+                goal, taken = self.grid.nearest_free(spots[taken]), taken + 1
             else:
-                actor.away, actor.hall_foot = False, None  # the corner is full, so it stays in its room.
+                actor.away, actor.hall_foot = False, None  # the table is crowded, so it stays in its room.
                 continue
-            fx, fy = actor.hall_foot
-            dx, dy = goal[0] - fx, goal[1] - fy
-            actor.hall_foot = (fx + max(-2, min(2, dx)), fy + max(-2, min(2, dy)))
-            actor.moving = (dx, dy) != (0, 0)
-            actor.hall_flip = dx > 0 if dx else cx + 28 > fx
-            if leaving and not actor.moving:
-                actor.away, actor.hall_foot = False, None
+            if actor.hall_goal != goal:
+                actor.hall_path, actor.hall_goal = self.grid.route(actor.hall_foot, goal), goal
+            actor.moving = bool(actor.hall_path)
+            if actor.moving:
+                fx, fy = actor.hall_foot
+                dx, dy = actor.hall_path[0][0] - fx, actor.hall_path[0][1] - fy
+                actor.hall_foot = (fx + max(-2, min(2, dx)), fy + max(-2, min(2, dy)))
+                if dx:
+                    actor.hall_flip = dx > 0
+                if actor.hall_foot == actor.hall_path[0]:
+                    actor.hall_path.pop(0)
+            else:
+                actor.hall_flip = self.plan.table[0] + TABLE_W // 2 > actor.hall_foot[0]
+                if leaving:
+                    actor.away, actor.hall_foot, actor.hall_goal = False, None, None
 
-    def _draw_interior(self, canvas: sprites.Canvas, x: int, y: int, door: Door) -> None:
+    def _draw_interior(self, canvas: sprites.Canvas, panel, door: Door) -> None:
         inside = hallart.new_interior()
         present = [self.actors[w.id] for w in door.workers if not self.actors[w.id].away][:2]
         for slot, actor in enumerate(present):
             sx = 1 + slot * 18
-            hallart.rect(inside, sx + 1, 7, 14, 14, (90, 96, 130))
+            hallart.rect(inside, sx + 1, 7 + hallart.PADDING, 14, 14, (90, 96, 130))
             pose, eyes, _, _ = actor.seat_look(self.tick)
             if actor.worker.state == "waiting":
                 pose, eyes = "bob", ""
-            sprites.draw(inside, sx, 2, actor.look, pose, self.tick, "all" if pose in ("bob", "wait") else "back", eyes=eyes)
+            sprites.draw(inside, sx, 2 + hallart.PADDING, actor.look, pose, self.tick, "all" if pose in ("bob", "wait") else "back", eyes=eyes)
         hallart.draw_desk_edge(inside)
-        hallart.draw_glass(canvas, x, y, inside, self.tick + x)
+        hallart.draw_glass(canvas, panel, inside, self.tick + panel.x)
 
     def _background(self) -> sprites.Canvas:
-        if self._floor is None:
-            self._floor = sprites.Canvas(self.cols, max(0, self.rows - 1) * 2)
+        """Floor, walls, table base and the flat parts of the offices of this page, drawn once."""
+        keys = tuple(self.visible_keys())
+        if self._floor is None or self._floor[0] != keys:
+            floor = sprites.Canvas(self.cols, max(0, self.rows - 1) * 2)
             from .props import draw_corridor
-            (hallart.draw_warehouse_floor if self.warehouse else draw_corridor)(self._floor)
-        return self._floor.copy()
+            (hallart.draw_warehouse_floor if self.warehouse else draw_corridor)(floor)
+            if self.plan.wide:
+                hallart.draw_side_walls(floor, self.plan)
+            for index, key in enumerate(keys):
+                panel = self.plan.panels[index]
+                if key == BACK:
+                    hallart.draw_roller_front(floor, panel.x, panel.y, True)
+                    continue
+                wall = hallart.WALLS[sum(map(ord, key)) % len(hallart.WALLS)]
+                if panel.slope == 0:
+                    hallart.draw_office_front(floor, panel.x, panel.y, wall)
+                else:
+                    flat = sprites.Canvas(hallart.BAY_W, hallart.BAY_H)
+                    hallart.draw_office_front(flat, 0, 0, wall, roof=False)
+                    hallart.blit_panel(floor, flat, panel)
+            if self.plan.wide:
+                for index in range(len(keys), len(self.plan.panels)):
+                    flat = sprites.Canvas(hallart.BAY_W, hallart.BAY_H)
+                    hallart.draw_office_front(flat, 0, 0, (196, 200, 212), roof=False)
+                    hallart.draw_dark_window(flat)
+                    hallart.blit_panel(floor, flat, self.plan.panels[index])
+            if self.warehouse:
+                for index in range(len(keys), len(self.plan.panels)):
+                    hallart.draw_crates(floor, self.plan.panels[index].x, self.plan.panels[index].y, index)
+            self._floor = (keys, floor)
+        return self._floor[1].copy()
 
     def _label(self, frame: Frame, index: int, title: str, summary: str, selected: bool) -> None:
         x, y = self.cell_xy(index)
-        row = max(0, (y - TOP_PX) // 2)
-        width = hallart.BAY_W + hallart.DEPTH - 1
+        row = max(0, (y - (4 if self.plan.wide else TOP_PX)) // 2)
+        width = hallart.BAY_W + (0 if self.plan.wide else hallart.DEPTH - 1)
         fg, bg = ((28, 24, 40), MARK) if selected else (INK, CREAM)
         name = clip(clean(title), width - 2)
         frame.text(x, row, " " + name + " " * (width - 1 - width_of(name)), fg, bg, True)
@@ -192,30 +230,27 @@ class Hall:
             return frame
         canvas = self._background()
         labels = []
-        keys = self.visible_keys()
-        for index, key in enumerate(keys):
-            x, y = self.cell_xy(index)
+        for index, key in enumerate(self.visible_keys()):
+            panel = self.plan.panels[index]
             door = self._door_of(key)
             if door is None:
-                back = key == BACK
-                hallart.draw_roller_front(canvas, x, y, back)
-                labels.append((index, "Voltar ao escritorio" if back else "Warehouse", self.place if back else "todas as sessoes, de qualquer pasta", key))
+                labels.append((index, "Voltar ao escritorio", self.place, key))
                 continue
-            hallart.draw_office_front(canvas, x, y, hallart.WALLS[sum(map(ord, key)) % len(hallart.WALLS)])
-            hallart.draw_lamp(canvas, x, y, status_of(door), self.tick)
-            self._draw_interior(canvas, x, y, door)
+            hallart.draw_lamp(canvas, panel, status_of(door), self.tick)
+            self._draw_interior(canvas, panel, door)
             extra = len(door.workers) - 2
             where = clean(door.workers[0].cwd.rstrip("/").rsplit("/", 1)[-1]) + ": " if self.warehouse else ""
             labels.append((index, door.title, where + summary_of(door) + (f" (+{extra})" if extra > 0 else ""), key))
-        if self.warehouse:
-            for index in range(len(keys), self.per_page):
-                hallart.draw_crates(canvas, *self.cell_xy(index), index)
-        if self.has_corner:
-            hallart.draw_break_corner(canvas, *self.corner_xy(), self.tick)
+        if self.plan.table is not None:
+            hallart.draw_table(canvas, *self.plan.table, self.tick, self.selected_key == WAREHOUSE)
             self._draw_visitors(canvas)
         frame = Frame.from_canvas(canvas, self.cols, self.rows)
         for index, title, summary, key in labels:
             self._label(frame, index, title, summary, key == self.selected_key)
+        if self.plan.table is not None:
+            tx, ty = self.plan.table
+            selected = self.selected_key == WAREHOUSE
+            frame.text(tx, max(0, ty // 2 - 1), " Warehouse ", (28, 24, 40) if selected else INK, MARK if selected else CREAM, selected)
         if not self.doors:
             text = " Nenhuma sessao neste diretorio: veja a warehouse "
             frame.text((self.cols - len(text)) // 2, self.rows - 3, text, INK, CREAM, True)
