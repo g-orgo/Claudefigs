@@ -105,8 +105,11 @@ class Plan:
             for panel in self.panels:
                 if not panel.free:
                     continue
+                inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
+                if (x - inner) * (1 if panel.slope > 0 else -1) < 0:
+                    continue  # the lane behind the office lies outward of its inner end only.
                 col = min(BAY_W - 1, max(0, x - panel.x))
-                if panel.x - 2 <= x <= panel.x + BAY_W + 1 and panel.y + panel.shift(col) - CAP <= y <= panel.y + panel.shift(col) + BAY_H + 1:
+                if y <= panel.y + panel.shift(col) + BAY_H + 1:
                     return True
             return False
         for panel in self.panels:

@@ -5,7 +5,8 @@ from office import data, sprites
 from office.demo import DemoSource
 from office.hall import BACK, WAREHOUSE, doors_of
 from office.model import Worker
-from office.hallart import BAY_H, BAY_W
+from office.hallart import BAY_H, BAY_W, draw_side_walls
+from office.props import OUTLINE
 from office.hallplan import BACK_Y, DROP, TABLE_TOP, Plan
 from office.office import Office
 from office.paths import Grid, desk_blocks
@@ -145,6 +146,33 @@ class PlanTests(unittest.TestCase):
                     route = grid.route(grid.nearest_free(panel.door), grid.nearest_free(plan.spots()[0]))
                     self.assertGreater(len(route), 1, panel.door)
         self.assertFalse(Plan(170, 46, True).wide)
+
+    def test_lane_behind_a_lower_office_is_blocked_on_both_sides(self):
+        for cols, rows in [(200, 60), (276, 70)]:
+            with self.subTest(cols=cols, rows=rows):
+                plan = Plan(cols, rows, True)
+                free = [panel for panel in plan.panels if panel.free]
+                self.assertTrue(any(panel.slope > 0 for panel in free))
+                self.assertTrue(any(panel.slope < 0 for panel in free))
+                for panel in free:
+                    inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
+                    self.assertTrue(plan.blocks(inner, plan.floor_edge(inner) + 4), panel)
+
+    def test_partition_closes_the_gap_behind_a_lower_office(self):
+        for cols, rows in [(200, 60), (276, 70)]:
+            with self.subTest(cols=cols, rows=rows):
+                plan = Plan(cols, rows, True)
+                canvas = sprites.Canvas(plan.cols, plan.height)
+                draw_side_walls(canvas, plan)
+                for panel in plan.panels:
+                    if not panel.free:
+                        continue
+                    inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
+                    step = 1 if panel.slope > 0 else -1
+                    x = inner + 10 * step
+                    if not 0 <= x < canvas.width:
+                        continue
+                    self.assertEqual(canvas.rows[panel.y - 3 - 10 // 3][x], OUTLINE, panel)
 
     def test_warehouse_stays_on_the_table_on_every_page(self):
         office = Office(200, 60)

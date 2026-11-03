@@ -161,6 +161,33 @@ def draw_side_walls(canvas: Canvas, plan) -> None:
     for x in (left, right):
         edge = min(plan.floor_edge(x), canvas.height)
         rect(canvas, x, max(0, edge - (BAY_H + 4)), 1, edge - max(0, edge - (BAY_H + 4)), OUTLINE)
+    draw_partitions(canvas, plan)
+
+
+def draw_partitions(canvas: Canvas, plan) -> None:
+    """Partition walls behind each free-standing lower office, closing the gap between it and the back wall."""
+    from .hallplan import SLOPE  # local import: hallplan imports this module.
+    wall = (168, 186, 216)
+    for panel in plan.panels:
+        if not panel.free:
+            continue
+        inner = panel.x if panel.slope > 0 else panel.x + BAY_W - 1
+        top_y = panel.y - CAP
+        step = 1 if panel.slope > 0 else -1
+        edge = canvas.width - 1 if step > 0 else 0
+        tone = shade(wall, 0.82 if step > 0 else 0.98)
+        previous = None
+        for x in range(inner, edge + step, step):
+            dx = abs(x - inner)
+            drop = dx // SLOPE
+            top = top_y - drop
+            bottom = top_y + drop + 1
+            for y in range(max(0, top), bottom + 1):
+                canvas.put(x, y, tone)
+            canvas.put(x, top, OUTLINE)
+            if drop != previous:
+                canvas.put(x, top + 1, OUTLINE)
+                previous = drop
 
 
 def draw_free_office_frame(canvas: Canvas, panel, wall: Color) -> None:

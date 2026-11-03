@@ -273,6 +273,21 @@ test('transcriptLines shows activity labels collapsed before the tail', () => {
   ])
 })
 
+test('transcriptLines hides harness-injected text from user lines and keeps the real words', () => {
+  const user = (content: string, extra = '') => `{"type":"user"${extra},"message":{"content":${JSON.stringify(content)}}}`
+  const voce = (text: string) => transcriptLines(text).filter(l => l.role === 'voce').map(l => l.text)
+  expect(voce(user('<task-notification>{"id":"x"}</task-notification>'))).toEqual([])
+  expect(voce(user('<system-reminder>regra</system-reminder>\npedido real'))).toEqual(['pedido real'])
+  expect(voce(user('pedido real\n<system-reminder>regra</system-reminder>'))).toEqual(['pedido real'])
+  expect(voce(user('<system-reminder>a</system-reminder>', ',"isMeta":true'))).toEqual([])
+  expect(voce(user('resumo', ',"isCompactSummary":true'))).toEqual([])
+  expect(voce(user('lixo</task-notification> pedido'))).toEqual(['pedido'])
+  expect(voce(user('<task-notification>sem fim'))).toEqual([])
+  expect(voce(user('veja <div>x</div> e a < b'))).toEqual(['veja <div>x</div> e a < b'])
+  const quoted = '{"type":"assistant","message":{"content":[{"type":"text","text":"<system-reminder>x</system-reminder>"}]}}'
+  expect(transcriptLines(quoted)).toEqual([{ role: 'claude', text: '<system-reminder>x</system-reminder>' }])
+})
+
 test('subagentsText uses singular for one and plural otherwise', () => {
   expect(subagentsText(1)).toBe('[1 subagent rodando de fundo]')
   expect(subagentsText(2)).toBe('[2 subagents rodando de fundo]')

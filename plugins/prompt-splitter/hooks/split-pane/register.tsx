@@ -97,6 +97,8 @@ export type LiveAgent = {
 
 type Entry = {
   type?: unknown
+  isMeta?: unknown
+  isCompactSummary?: unknown
   message?: { content?: unknown }
   customTitle?: unknown
   aiTitle?: unknown
@@ -622,17 +624,50 @@ export function collapseActivity(lines: TranscriptLine[]): TranscriptLine[] {
   return out
 }
 
+// Tags the harness injects into user records; mirrors INJECTED_TAGS in scripts/office/data.py.
+const INJECTED_TAGS = [
+  'system-reminder',
+  'task-notification',
+  'agent-message',
+  'cross-session-message',
+  'local-command-stdout',
+  'local-command-stderr',
+  'local-command-caveat',
+  'command-name',
+  'command-message',
+  'command-args',
+  'tools-used-before-summary',
+]
+const TAG_ALTERNATION = INJECTED_TAGS.join('|')
+const PAIRED_BLOCK = new RegExp(`<(${TAG_ALTERNATION})(?:\\s[^>]*)?>[\\s\\S]*?</\\1>`, 'g')
+const UNTERMINATED_START = new RegExp(`^<(?:${TAG_ALTERNATION})(?:\\s[^>]*)?>`)
+const ORPHAN_CLOSE = new RegExp(`^[\\s\\S]*</(?:${TAG_ALTERNATION})>`)
+
+// Removes harness-injected tag blocks from user text: paired blocks, a cut-off opening tag at the start
+// (drops the whole text), and an orphan closing tag (drops everything through its last occurrence).
+export function stripInjected(text: string): string {
+  let out = text.replace(PAIRED_BLOCK, '')
+  if (UNTERMINATED_START.test(out.trimStart())) out = ''
+  out = out.replace(ORPHAN_CLOSE, '')
+  return out.trim()
+}
+
 // The last TAIL items of a transcript, as the pane shows them.
 export function transcriptLines(text: string): TranscriptLine[] {
   const out: TranscriptLine[] = []
   for (const line of text.split('\n')) {
     const entry = parseEntry(line)
     if (!entry) continue
+    if (entry.type === 'user' && (entry.isMeta || entry.isCompactSummary)) continue
     const role = entry.type === 'user' ? 'voce' : entry.type === 'assistant' ? 'claude' : undefined
     if (!role) continue
     for (const block of blocksOf(entry.message?.content)) {
-      if (block.kind === 'tool') out.push({ role: 'tool', text: activityLabel(block.name) })
-      else out.push({ role, text: clip(block.text) })
+      if (block.kind === 'tool') {
+        out.push({ role: 'tool', text: activityLabel(block.name) })
+        continue
+      }
+      const shown = role === 'voce' ? stripInjected(block.text) : block.text
+      if (shown !== '') out.push({ role, text: clip(shown) })
     }
   }
   return collapseActivity(out).slice(-TAIL)
