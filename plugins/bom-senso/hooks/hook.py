@@ -62,8 +62,6 @@ def context_for(event, data):
 
 def main():
     event = EVENTS[sys.argv[1]]
-    if not store.is_enabled():
-        return
     context = context_for(sys.argv[1], json.loads(sys.stdin.read() or "{}"))
     if context:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}))

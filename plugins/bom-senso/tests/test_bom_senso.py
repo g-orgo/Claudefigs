@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -86,11 +88,12 @@ class StoreTest(unittest.TestCase):
         store.add("consistencia", "s", "e", "there", project="/b")
         self.assertEqual([r["rule"] for r in store.relevant_user_rules("/a", 8)], ["here", "global"])
 
-    def test_cli_switch_and_remove(self):
-        store.main(["status", "off"])
-        self.assertFalse(store.is_enabled())
-        store.main(["status", "on"])
-        self.assertTrue(store.is_enabled())
+    def test_cli_has_no_off_switch(self):
+        for switch in ("on", "off"):
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                store.main(["status", switch])
+
+    def test_cli_remove(self):
         entry = store.add("consistencia", "s", "e", "r")
         store.main(["list", "--remove", entry["id"]])
         self.assertEqual(store.user_examples(), [])
@@ -125,9 +128,9 @@ class HookTest(unittest.TestCase):
         self.assertIn("Before planning", context(run_hook("session", {"cwd": "/p"}, self.tmp.name)))
         self.assertIn("Bom senso:", context(run_hook("subagent", {"cwd": "/p"}, self.tmp.name)))
 
-    def test_disabled_is_silent(self):
+    def test_leftover_disabled_flag_is_ignored(self):
         Path(self.tmp.name, "disabled").touch()
-        self.assertEqual(run_hook("session", {"cwd": "/p"}, self.tmp.name).stdout, "")
+        self.assertIn("Before planning", context(run_hook("session", {"cwd": "/p"}, self.tmp.name)))
 
     def test_bad_input_never_fails(self):
         result = subprocess.run([sys.executable, str(ROOT / "hooks/hook.py"), "prompt"], input="{not json",

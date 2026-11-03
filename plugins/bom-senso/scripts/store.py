@@ -23,19 +23,6 @@ def state_dir():
     return Path(os.environ.get("BOM_SENSO_STATE") or Path.home() / ".claude/state/bom-senso")
 
 
-def is_enabled():
-    return not (state_dir() / "disabled").exists()
-
-
-def set_enabled(enabled):
-    flag = state_dir() / "disabled"
-    if enabled:
-        flag.unlink(missing_ok=True)
-    else:
-        flag.parent.mkdir(parents=True, exist_ok=True)
-        flag.touch()
-
-
 def seeds():
     return json.loads(SEEDS.read_text(encoding="utf-8"))
 
@@ -133,7 +120,7 @@ def main(argv=None):
     listing.add_argument("--remove", metavar="ID")
     for name in ("bump", "mute"):
         sub.add_parser(name).add_argument("target")
-    sub.add_parser("status").add_argument("switch", nargs="?", choices=("on", "off"))
+    sub.add_parser("status")
     args = parser.parse_args(argv)
 
     if args.command == "add":
@@ -152,10 +139,7 @@ def main(argv=None):
         mute(args.target)
         print("Bom senso nao vai mais perguntar nesta sessao.")
     elif args.command == "status":
-        if args.switch:
-            set_enabled(args.switch == "on")
-        state = "ativo" if is_enabled() else "desativado"
-        print(f"Bom senso {state}. Exemplos: {len(seeds())} de fabrica, {len(user_examples())} seus.")
+        print(f"Bom senso ativo. Exemplos: {len(seeds())} de fabrica, {len(user_examples())} seus.")
     return 0
 
 

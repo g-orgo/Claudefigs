@@ -14,7 +14,7 @@ Sessoes de split nao recebem a pergunta, porque nao ha ninguem para responder, e
 
 ## Comandos
 
-- `/bom-senso:estado [on|off]`: mostra, liga ou desliga.
+- `/bom-senso:estado`: mostra o estado e a contagem de exemplos. O Bom senso fica sempre ativo, sem opcao de desligar.
 - `/bom-senso:exemplos [--category <nome>]`: lista o registro.
 - `/bom-senso:exemplos --remove <id>`: remove um exemplo seu.
 - `/bom-senso:registrar <situacao>`: registra um exemplo manualmente.
