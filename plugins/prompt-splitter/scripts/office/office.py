@@ -27,6 +27,9 @@ EXTRA_FLOOR_MARGIN = 1  # rows of floor above and below the box where the floor 
 ROOM_BUSY = ("working", "thinking")
 COPY_WORDING = re.compile(r"(?i)\b(copy|c[oó]pia|started a copy)\b")
 BACK_LABEL, BACK_FILL = " < Voltar ", (232, 178, 92)  # the bubble look: wood gold, ink text
+BACK_GAP = 1  # cells between the Voltar button and the box.
+BOX_TOP_ROWS = 2  # rows of name plate above the box's body; the button centers on the body.
+MIN_BOX_WIDTH = 24  # draw_composer draws nothing narrower than this.
 
 
 class Office:
@@ -87,6 +90,9 @@ class Office:
                 left = max(panel.x + BAY_W for panel in free if panel.x < self.cols // 2)
                 room = min(panel.x for panel in free if panel.x >= self.cols // 2) - left - 4
         width, col = field_geometry(self.cols, room)
+        side = len(BACK_LABEL) + BACK_GAP + 1
+        if self.mode != "hall" and col < side:  # no free floor at the left: the box gives way to the button.
+            col, width = side, self.cols - side - 2
         return col, top, width, rows
 
     def in_composer(self, col: int, row: int) -> bool:
@@ -179,8 +185,14 @@ class Office:
         return self._floor[1]
 
     def back_button(self) -> tuple[int, int, int] | None:
-        """Where the Voltar button sits as (col, row, width): room at the left, warehouse centered; None in the hall."""
+        """Where the Voltar button sits as (col, row, width): left of the box; None in the hall.
+
+        Without a box to sit beside it falls back to the top: room at the left, warehouse centered."""
         width = len(BACK_LABEL)
+        if self.mode != "hall" and self.composer_shown():
+            col, top, field, rows = self.field_rect()
+            if field >= MIN_BOX_WIDTH:
+                return (col - width - BACK_GAP, top + BOX_TOP_ROWS + (rows - BOX_TOP_ROWS) // 2, width)
         if self.mode == "room":
             return (1, 0, width)
         if self.mode == "warehouse":

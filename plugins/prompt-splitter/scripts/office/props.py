@@ -20,7 +20,10 @@ SCREENS = {
 SCREEN_BG = {"code": (32, 36, 60), "term": (16, 26, 24), "doc": (120, 130, 170), "web": (52, 82, 140), "idle": (64, 92, 142)}
 SCREEN_SHINE = (136, 168, 216)
 BEZEL = (112, 120, 146)
-BADGE_LIGHT, BADGE_DARK = (132, 232, 168), (52, 164, 100)  # top shine and bottom shade of the done badge.
+BADGE_RIMS = {  # (top shine, bottom shade) of the coloured rim on the round status badges.
+    "done": ((132, 232, 168), (52, 164, 100)),
+    "fail": ((255, 142, 150), (160, 34, 50)),
+}
 LEG_DROP = 6  # floor contact of a leg, below the desk corner it hangs from.
 
 
@@ -112,7 +115,7 @@ ICONS = {
     "ask": ("#ffd24a", ["ooooooo", "oWkkkWo", "oWWWkWo", "oWWkkWo", "oWWkWWo", "oWWWWWo", "oWWkWWo", "ooooooo", "..oo"]),
     "alert": ("#ffd24a", ["ooooo", "oWkWo", "oWkWo", "oWkWo", "oWWWo", "oWkWo", "ooooo", ".oo"]),
     "done": ("#4fcf7f", ["..ooooo..", ".oLLLLLo.", "oLggggWLo", "oggggWWgo", "ogWgWWggo", "ogWWWgggo", "oggWggggo", ".oDDDDDo.", "..ooooo.."]),
-    "fail": ("#ff6b6b", ["oo...oo", "oWo.oWo", ".oWoWo.", "..oWo..", ".oWoWo.", "oWo.oWo", "oo...oo"]),
+    "fail": ("#dc3c4c", ["..ooooo..", ".oLLLLLo.", "oLWgggWLo", "oggWgWggo", "ogggWgggo", "oggWgWggo", "ogWgggWgo", ".oDDDDDo.", "..ooooo.."]),
     "heart": ("#ff7fa8", [".oo.oo.", "oWkokWo", "okkkkko", ".okkko.", "..oko..", "...o..."]),
     "zzz": ("#5d6fe0", ["oooo", "..o.", ".o..", "oooo"]),
     "steam": ("#ffffff", [".W.", "W..", ".W."]),
@@ -123,8 +126,9 @@ def draw_icon(canvas: Canvas, x: int, y: int, name: str) -> None:
     from .sprites import rgb
     tone, rows = ICONS[name]
     color = rgb(tone)
-    pal = {"o": OUTLINE, "W": color if name in ("fail", "steam") else (255, 255, 255), "k": color if name == "heart" else OUTLINE,
-           "g": color, "L": BADGE_LIGHT, "D": BADGE_DARK}
+    light, dark = BADGE_RIMS.get(name, (color, color))
+    pal = {"o": OUTLINE, "W": color if name == "steam" else (255, 255, 255), "k": color if name == "heart" else OUTLINE,
+           "g": color, "L": light, "D": dark}
     if name == "zzz":
         pal = {"o": color}
     for j, row in enumerate(rows):

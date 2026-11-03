@@ -342,15 +342,49 @@ class OfficeBackAndSendTests(unittest.TestCase):
         office.set_workers([worker])
         return office
 
-    def test_back_button_is_top_left_in_room_centered_in_warehouse_absent_in_hall(self):
+    def test_back_button_sits_left_of_the_box_in_room_and_warehouse_absent_in_hall(self):
         office = self.office()
+        for mode in ("room", "warehouse"):
+            office.mode = mode
+            col, row, width = office.back_button()
+            left, top, _, rows = office.field_rect()
+            self.assertEqual(col + width + 1, left)
+            self.assertTrue(top < row < top + rows)
+            self.assertFalse(office.in_composer(col, row))
+        office.mode = "hall"
+        self.assertIsNone(office.back_button())
+
+    def test_box_gives_way_to_the_back_button_on_a_narrow_terminal(self):
+        office = Office(60, 40, sender=lambda argv, cwd: (0, ""))
+        office.set_workers([])
+        hall_left = office.field_rect()[0]
+        office.mode = "warehouse"
+        col, row, width = office.back_button()
+        left, _, field, _ = office.field_rect()
+        self.assertGreaterEqual(col, 0)
+        self.assertEqual(col + width + 1, left)
+        self.assertLessEqual(left + field, 60)
+        self.assertLess(hall_left, left)
+
+    def test_back_button_falls_back_to_the_top_without_a_box(self):
+        office = Office(200, 20, sender=lambda argv, cwd: (0, ""))
+        office.set_workers([])
         office.mode = "room"
         self.assertEqual(office.back_button()[0:2], (1, 0))
         office.mode = "warehouse"
-        self.assertEqual(office.back_button()[1], 0)
-        self.assertEqual(office.back_button()[0], (200 - len(BACK_LABEL)) // 2)
-        office.mode = "hall"
-        self.assertIsNone(office.back_button())
+        self.assertEqual(office.back_button()[0:2], ((200 - len(BACK_LABEL)) // 2, 0))
+
+    def test_fail_badge_has_the_done_badge_shape_and_a_coloured_rim(self):
+        def outline(rows):
+            return [[ch == "o" for ch in row] for row in rows]
+        done, fail = props.ICONS["done"][1], props.ICONS["fail"][1]
+        self.assertEqual(outline(done), outline(fail))
+        self.assertEqual({"L", "D"} & set("".join(fail)), {"L", "D"})
+        canvas = Canvas(9, 9)
+        props.draw_icon(canvas, 0, 0, "fail")
+        self.assertEqual(canvas.rows[1][4], props.BADGE_RIMS["fail"][0])
+        self.assertEqual(canvas.rows[7][4], props.BADGE_RIMS["fail"][1])
+        self.assertEqual(canvas.rows[4][4], (255, 255, 255))
 
     def test_click_on_back_button_returns_from_room_without_opening_a_bubble(self):
         office = self.office()
@@ -369,11 +403,11 @@ class OfficeBackAndSendTests(unittest.TestCase):
             handle_key(office, f"\x1b[<0;{col + 1};{row + 1}M")
         opened.assert_not_called()
 
-    def test_back_label_is_drawn_on_row_zero(self):
+    def test_back_label_is_drawn_on_the_button_row(self):
         office = self.office()
         office.mode = "room"
         frame = office.render()
-        self.assertIn(BACK_LABEL.strip(), row_text(frame, 0))
+        self.assertIn(BACK_LABEL.strip(), row_text(frame, office.back_button()[1]))
 
     def test_room_send_stops_attachable_done_worker_then_resumes(self):
         calls = []
