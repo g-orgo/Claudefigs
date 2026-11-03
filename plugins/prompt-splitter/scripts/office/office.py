@@ -98,11 +98,18 @@ class Office:
             self._go(key)
         return None
 
+    def scroll(self, delta: int) -> None:
+        self.view().scroll(delta)
+
     def press(self) -> Worker | None:
         """Enter: goes through the selected door, or returns the selected split inside a room."""
         if self.mode == "room":
             return self.scene.press()
-        self._go(self.view().selected_key)
+        view = self.view()
+        if not view.on_page(view.selected_key):
+            view.reveal()  # off the displayed page: only bring the page back.
+            return None
+        self._go(view.selected_key)
         return None
 
     def back(self) -> None:

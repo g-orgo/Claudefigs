@@ -20,8 +20,8 @@ from office.term import Frame, Screen, diff  # noqa: E402
 FRAME_S = 1 / 8
 REFRESH_TICKS = 4
 FONT = "/usr/share/fonts/google-noto/NotoSansMono-Regular.ttf"
-NEXT = {"\t", "\x1b[C", "\x1b[B"}
-PREVIOUS = {"\x1b[Z", "\x1b[D", "\x1b[A"}
+NEXT = {"\x1b[C", "\x1b[B"}
+PREVIOUS = {"\x1b[D", "\x1b[A"}
 ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?)?")
 PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*)?")
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
@@ -91,9 +91,9 @@ def handle_key(scene, key: str) -> None:
         if not pressed:
             return
         if button == WHEEL_UP:
-            scene.select(-1)
+            scene.scroll(-1)
         elif button == WHEEL_DOWN:
-            scene.select(1)
+            scene.scroll(1)
         elif button == LEFT_BUTTON:
             worker = scene.click(col, row)
             if worker is not None:

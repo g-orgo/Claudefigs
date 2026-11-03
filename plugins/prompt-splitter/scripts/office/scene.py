@@ -20,6 +20,7 @@ class Scene:
         self.pages: list[list[rooms.Room]] = []
         self.actors: dict[str, Actor] = {}
         self.selected_id: str | None = None
+        self._page = 0  # stored page, clamped to pages() on read.
         self.seen = 0
         self.notice, self.notice_until = "", 0
         self._backgrounds: dict[tuple, sprites.Canvas] = {}
@@ -55,16 +56,32 @@ class Scene:
         if self.workers:
             ids = [w.id for w in self.workers]
             self.selected_id = ids[max(0, min(len(ids) - 1, ids.index(self.selected_id) + delta))]
+            self.reveal()
+
+    def scroll(self, delta: int) -> None:
+        """Turns pages without moving the selection; no wrap."""
+        if self.pages:
+            self._page = max(0, min(len(self.pages) - 1, self.page() + delta))
+
+    def reveal(self) -> None:
+        """Brings the stored page to the page holding the selected worker, if it has one."""
+        index = self._selected_page()
+        if index is not None:
+            self._page = index
 
     def selected(self) -> Worker | None:
         return next((w for w in self.workers if w.id == self.selected_id), None)
 
-    def page(self) -> int:
-        """Index of the page holding the selected worker."""
+    def _selected_page(self) -> int | None:
         for index, page in enumerate(self.pages):
             if any(w.id == self.selected_id for room in page for w in room.workers):
                 return index
-        return 0
+        return None
+
+    def page(self) -> int:
+        """The stored page, clamped to the pages that exist now."""
+        self._page = max(0, min(self._page, len(self.pages) - 1))
+        return self._page
 
     def _rooms(self) -> list[rooms.Room]:
         return self.pages[self.page()] if self.pages else []
@@ -89,6 +106,11 @@ class Scene:
         return worker
 
     def press(self) -> Worker | None:
+        """Enter: when the selected worker is off the displayed page, only brings the page back."""
+        index = self._selected_page()
+        if index is not None and index != self.page():
+            self._page = index
+            return None
         return self.selected()
 
     def notify(self, text: str) -> None:
@@ -223,7 +245,7 @@ class Scene:
         count = lambda *states: sum(w.state in states for w in self.workers)
         pages = max(1, len(self.pages))
         text = (f" {count('working', 'thinking')} rodando  {count('waiting', 'ask', 'blocked')} aguardando  "
-                f"{count('done')} concluidas  {count('failed')} falhas  |  Tab/setas/roda selecionam  Enter/clique abre  Esc volta  q sai  "
+                f"{count('done')} concluidas  {count('failed')} falhas  |  Setas selecionam  Roda rola  Enter/clique abre  Esc volta  q sai  "
                 f"pagina {self.page() + 1}/{pages}")
         if self.tick < self.notice_until:
             text = f" {self.notice}"

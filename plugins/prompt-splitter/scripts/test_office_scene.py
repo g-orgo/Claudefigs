@@ -216,6 +216,7 @@ class HitTestTests(unittest.TestCase):
         scene = Scene(100, 30)
         scene.set_workers([make_worker(i) for i in range(scene.per_page + 1)])
         scene.selected_id = scene.workers[-1].id
+        scene.reveal()
         col, top, _, _ = scene._cells()[0]
         self.assertEqual(scene.worker_at(col, top).id, scene.workers[-1].id)
 
@@ -226,13 +227,24 @@ class HandleKeyTests(unittest.TestCase):
         scene.set_workers([make_worker(i) for i in range(3)])
         return scene
 
-    def test_wheel_moves_selection_and_stops_at_both_ends(self):
-        scene = self.scene()
+    def test_wheel_turns_pages_and_keeps_selection(self):
+        scene = Scene(200, 60)
+        scene.set_workers([make_worker(i) for i in range(60)])
+        self.assertGreater(len(scene.pages), 1)
+        selected = scene.selected_id
+        handle_key(scene, "\x1b[<65;1;1M")
+        self.assertEqual(scene.page(), 1)
+        self.assertEqual(scene.selected_id, selected)
         handle_key(scene, "\x1b[<64;1;1M")
+        handle_key(scene, "\x1b[<64;1;1M")
+        self.assertEqual(scene.page(), 0)
+        self.assertEqual(scene.selected_id, selected)
+
+    def test_tab_no_longer_moves_selection(self):
+        scene = self.scene()
+        handle_key(scene, "\t")
+        handle_key(scene, "\x1b[Z")
         self.assertEqual(scene.selected_id, "w0")
-        for expected in ("w1", "w2", "w2"):
-            handle_key(scene, "\x1b[<65;1;1M")
-            self.assertEqual(scene.selected_id, expected)
 
     def test_left_press_on_a_bubble_selects_and_opens_it(self):
         scene = self.scene()
@@ -257,6 +269,40 @@ class HandleKeyTests(unittest.TestCase):
         with mock.patch("claude_office.open_session") as opened:
             handle_key(scene, "\r")
         opened.assert_called_once_with(scene, scene.workers[0])
+
+
+class ScrollSceneTests(unittest.TestCase):
+    def scene(self) -> Scene:
+        scene = Scene(200, 60)
+        scene.set_workers([make_worker(i) for i in range(60)])
+        self.assertGreater(len(scene.pages), 1)
+        return scene
+
+    def test_scroll_stops_at_both_ends_without_wrapping(self):
+        scene = self.scene()
+        last = len(scene.pages) - 1
+        scene.scroll(-1)
+        self.assertEqual(scene.page(), 0)
+        for _ in range(len(scene.pages) + 2):
+            scene.scroll(1)
+        self.assertEqual(scene.page(), last)
+        scene.scroll(1)
+        self.assertEqual(scene.page(), last)
+
+    def test_arrow_after_scrolling_brings_the_view_to_the_selection(self):
+        scene = self.scene()
+        scene.scroll(1)
+        self.assertEqual(scene.page(), 1)
+        scene.select(-1)
+        self.assertEqual(scene.page(), scene._selected_page())
+
+    def test_enter_off_page_only_brings_the_page_back(self):
+        scene = self.scene()
+        selected = scene.selected_id
+        scene.scroll(1)
+        self.assertIsNone(scene.press())
+        self.assertEqual(scene.page(), scene._selected_page())
+        self.assertEqual(scene.selected_id, selected)
 
 
 class OpenSessionTests(unittest.TestCase):
@@ -438,6 +484,19 @@ class RoomLayoutTests(unittest.TestCase):
                     x, y = room.clamp_foot(desk_x + dx, desk_y + dy)
                     self.assertTrue(room.left + 9 <= x <= room.right - 9)
                     self.assertTrue(room.floor_edge(x) + 1 <= y <= room.bottom - 2)
+
+    def test_desk_legs_clear_the_bottom_wall(self):
+        # draw_room_shell paints the bottom wall from room.bottom - WALL_THICK up to room.bottom.
+        wall_thick = 2
+        for cols, rows in ((200, 60), (230, 60), (120, 40)):
+            scene = Scene(cols, rows)
+            scene.set_workers(self.demo())
+            scene._sync()
+            for room in scene._rooms():
+                for worker in room.workers:
+                    desk_x, desk_y = scene.actors[worker.id].desk
+                    leg_end = desk_y + 20 + props.LEG_DROP
+                    self.assertLessEqual(leg_end + 3, room.bottom - wall_thick, (cols, rows, worker.id))
 
 
 class Phase2SceneTests(unittest.TestCase):

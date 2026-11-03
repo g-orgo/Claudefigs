@@ -21,7 +21,7 @@ SCREEN_BG = {"code": (32, 36, 60), "term": (16, 26, 24), "doc": (120, 130, 170),
 SCREEN_SHINE = (136, 168, 216)
 BEZEL = (112, 120, 146)
 BADGE_LIGHT, BADGE_DARK = (132, 232, 168), (52, 164, 100)  # top shine and bottom shade of the done badge.
-LEG_DROP = 11  # floor contact of a leg, below the desk corner it hangs from.
+LEG_DROP = 6  # floor contact of a leg, below the desk corner it hangs from.
 
 
 def fill_poly(canvas: Canvas, points: list[tuple[int, int]], color: Color, edge: Color | None = OUTLINE) -> None:

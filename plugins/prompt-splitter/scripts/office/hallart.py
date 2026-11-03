@@ -3,6 +3,7 @@ from .props import OUTLINE, fill_poly
 from .sprites import Canvas, Color
 
 BAY_W, BAY_H, DEPTH = 58, 34, 6
+CAP = 3  # roof strip of a free-standing office.
 PADDING = 8  # spare interior rows, so an angled window never reads outside the room.
 DOOR = (3, 7, 14, BAY_H - 8)  # column, row, width, height inside the front wall.
 WINDOW = (20, 4, BAY_W - 23, BAY_H - 10)
@@ -145,16 +146,30 @@ def draw_table(canvas: Canvas, x: int, y: int, tick: int, selected: bool) -> Non
 
 
 def draw_side_walls(canvas: Canvas, plan) -> None:
-    """Back wall with chamfers and the two side walls, for the wide floor plan."""
-    tone, edge_tone = (168, 186, 216), (120, 128, 150)
+    """Back wall of the wide plan: flat behind the table, with diagonal walls falling to both view edges."""
+    flat, void, edge_tone = (168, 186, 216), (38, 42, 58), (120, 128, 150)
+    left, right = plan.wall_start(), canvas.width - 1 - plan.wall_start()
     for x in range(canvas.width):
         edge = min(plan.floor_edge(x), canvas.height)
-        rect(canvas, x, 0, 1, edge, tone if x < canvas.width // 2 else shade(tone, 1.06))
+        top = max(0, edge - (BAY_H + 4))
+        tone = shade(flat, 0.92) if x < left else shade(flat, 1.06) if x > right else flat
+        rect(canvas, x, 0, 1, top, void)
+        rect(canvas, x, top, 1, max(0, edge - 3 - top), tone)
+        rect(canvas, x, max(top, edge - 3), 1, min(3, edge - top), shade(tone, 0.8))
         canvas.put(x, edge, OUTLINE)
         canvas.put(x, edge + 1, edge_tone)
-    for y in range(canvas.height):
-        for x in (plan.side_wall, canvas.width - 1 - plan.side_wall):
-            canvas.put(x, y, OUTLINE)
+    for x in (left, right):
+        edge = min(plan.floor_edge(x), canvas.height)
+        rect(canvas, x, max(0, edge - (BAY_H + 4)), 1, edge - max(0, edge - (BAY_H + 4)), OUTLINE)
+
+
+def draw_free_office_frame(canvas: Canvas, panel, wall: Color) -> None:
+    """The roof strip and the bottom edge of a free-standing office, so it reads as a solid object."""
+    for col in range(BAY_W):
+        y0 = panel.y + panel.shift(col)
+        rect(canvas, panel.x + col, y0 - CAP, 1, CAP, shade(wall, 1.08))
+        canvas.put(panel.x + col, y0 - CAP, OUTLINE)
+        canvas.put(panel.x + col, y0 + BAY_H, OUTLINE)
 
 
 def draw_warehouse_floor(canvas: Canvas) -> None:

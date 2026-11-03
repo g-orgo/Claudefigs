@@ -5,7 +5,8 @@ from office import data, sprites
 from office.demo import DemoSource
 from office.hall import BACK, WAREHOUSE, doors_of
 from office.model import Worker
-from office.hallplan import Plan
+from office.hallart import BAY_H, BAY_W
+from office.hallplan import BACK_Y, DROP, TABLE_TOP, Plan
 from office.office import Office
 from office.paths import Grid, desk_blocks
 from office.scene import Scene
@@ -115,6 +116,36 @@ class PlanTests(unittest.TestCase):
         self.assertFalse(Plan(150, 44, True).wide)
         self.assertIsNotNone(Plan(150, 44, True).table)
 
+    def test_floor_edge_is_flat_under_the_table_and_falls_to_both_edges(self):
+        plan = Plan(200, 60, True)
+        cx = plan.cols // 2
+        self.assertEqual(plan.floor_edge(cx), BACK_Y)
+        self.assertEqual(plan.floor_edge(cx - 10), plan.floor_edge(cx + 9))
+        self.assertGreater(plan.floor_edge(0), plan.floor_edge(cx - 40))
+        for x in range(plan.cols):
+            self.assertEqual(plan.floor_edge(x), plan.floor_edge(plan.cols - 1 - x))
+        tx, ty = plan.table
+        mid = tx + 30
+        self.assertGreaterEqual(plan.floor_edge(mid), ty + 17)
+        self.assertLessEqual(plan.floor_edge(mid), ty + 18)
+
+    def test_wide_plans_keep_panels_in_view_and_doors_reachable(self):
+        for cols, rows in [(188, 46), (200, 60), (230, 60), (276, 70)]:
+            with self.subTest(cols=cols, rows=rows):
+                plan = Plan(cols, rows, True)
+                self.assertTrue(plan.wide)
+                self.assertGreaterEqual(len(plan.panels), 2)
+                for panel in plan.panels:
+                    self.assertGreaterEqual(panel.x, 0)
+                    self.assertLessEqual(panel.x + BAY_W, cols)
+                    self.assertGreaterEqual(panel.y, 0)
+                    self.assertLessEqual(panel.y + DROP + BAY_H, plan.height)
+                grid = plan.grid()
+                for panel in plan.panels:
+                    route = grid.route(grid.nearest_free(panel.door), grid.nearest_free(plan.spots()[0]))
+                    self.assertGreater(len(route), 1, panel.door)
+        self.assertFalse(Plan(170, 46, True).wide)
+
     def test_warehouse_stays_on_the_table_on_every_page(self):
         office = Office(200, 60)
         office.set_workers([worker(f"a{i}", f"p{i}") for i in range(9)])
@@ -129,7 +160,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(hall.page(), hall.pages() - 1)
 
     def test_nobody_stops_on_the_table_in_the_hall(self):
-        office = Office(170, 46)
+        office = Office(188, 46)
         office.set_workers([worker(f"a{i}", f"p{i}") for i in range(3)])
         table = office.hall.plan
         for _ in range(1500):
@@ -186,6 +217,46 @@ class LifeTests(unittest.TestCase):
                     office.toggle_warehouse()
                 office.step()
                 office.render()
+
+
+class ScrollHallTests(unittest.TestCase):
+    def setUp(self):
+        self.office = Office(200, 60)
+        self.office.set_workers([worker(f"a{i}", f"p{i}") for i in range(9)])
+
+    def check_scroll(self):
+        hall = self.office.view()
+        self.assertGreater(hall.pages(), 1)
+        selected = hall.selected_key
+        self.office.scroll(1)
+        self.assertEqual(hall.page(), 1)
+        self.assertEqual(hall.selected_key, selected)
+        for _ in range(hall.pages() + 2):
+            self.office.scroll(1)
+        self.assertEqual(hall.page(), hall.pages() - 1)
+        for _ in range(hall.pages() + 2):
+            self.office.scroll(-1)
+        self.assertEqual(hall.page(), 0)
+        self.assertEqual(hall.selected_key, selected)
+
+    def test_wheel_scrolls_the_hall(self):
+        self.check_scroll()
+
+    def test_wheel_scrolls_the_warehouse(self):
+        self.office.toggle_warehouse()
+        self.check_scroll()
+
+    def test_arrow_after_scrolling_brings_the_view_to_the_selection(self):
+        hall = self.office.view()
+        self.office.scroll(1)
+        self.office.select(1)
+        self.assertEqual(hall.page(), hall.door_keys().index(hall.selected_key) // hall.page_size)
+
+    def test_enter_off_page_only_brings_the_page_back(self):
+        self.office.scroll(1)
+        self.assertIsNone(self.office.press())
+        self.assertEqual(self.office.mode, "hall")
+        self.assertEqual(self.office.hall.page(), 0)
 
 
 if __name__ == "__main__":

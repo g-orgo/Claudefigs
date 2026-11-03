@@ -81,14 +81,26 @@ class Hall:
     def select(self, delta: int) -> None:
         keys = self.entry_keys()
         new = keys[max(0, min(len(keys) - 1, keys.index(self.selected_key) + delta))]
-        self._page = self.page()
         self.selected_key = new
+        self.reveal()
 
-    def page(self) -> int:
+    def scroll(self, delta: int) -> None:
+        """Turns pages without moving the selection; no wrap."""
+        self._page = max(0, min(self.pages() - 1, self.page() + delta))
+
+    def reveal(self) -> None:
+        """Brings the stored page to the page of the selected door; the table entries keep the page."""
         keys = self.door_keys()
         if self.selected_key in keys:
-            return keys.index(self.selected_key) // self.page_size
-        return min(self._page, max(0, self.pages() - 1))  # the table's parcel is on every page, so it stays here.
+            self._page = keys.index(self.selected_key) // self.page_size
+
+    def on_page(self, key: str | None) -> bool:
+        return key not in self.door_keys() or key in self.visible_keys()
+
+    def page(self) -> int:
+        """The stored page, clamped to the pages that exist now."""
+        self._page = min(self._page, max(0, self.pages() - 1))
+        return self._page
 
     def pages(self) -> int:
         return max(1, (len(self.door_keys()) + self.page_size - 1) // self.page_size)
@@ -196,6 +208,8 @@ class Hall:
                     hallart.draw_roller_front(floor, panel.x, panel.y, True)
                     continue
                 wall = hallart.WALLS[sum(map(ord, key)) % len(hallart.WALLS)]
+                if panel.free:
+                    hallart.draw_free_office_frame(floor, panel, wall)
                 if panel.slope == 0:
                     hallart.draw_office_front(floor, panel.x, panel.y, wall)
                 else:
@@ -207,6 +221,8 @@ class Hall:
                     flat = sprites.Canvas(hallart.BAY_W, hallart.BAY_H)
                     hallart.draw_office_front(flat, 0, 0, (196, 200, 212), roof=False)
                     hallart.draw_dark_window(flat)
+                    if self.plan.panels[index].free:
+                        hallart.draw_free_office_frame(floor, self.plan.panels[index], (196, 200, 212))
                     hallart.blit_panel(floor, flat, self.plan.panels[index])
             if self.warehouse:
                 for index in range(len(keys), len(self.plan.panels)):
@@ -280,7 +296,7 @@ class Hall:
     def _footer(self, frame: Frame) -> None:
         where = "Warehouse: todas as sessoes" if self.warehouse else f"Escritorio: {self.place}"
         back = "Esc volta" if self.warehouse else "w warehouse"
-        text = f" {where}  |  Tab/setas/roda selecionam  Enter/clique entra  {back}  q sai  pagina {self.page() + 1}/{self.pages()}"
+        text = f" {where}  |  Setas selecionam  Roda rola  Enter/clique entra  {back}  q sai  pagina {self.page() + 1}/{self.pages()}"
         if self.tick < self.notice_until:
             text = f" {self.notice}"
         frame.text(0, self.rows - 1, text.ljust(self.cols)[:self.cols], FOOTER_FG, FOOTER_BG)
