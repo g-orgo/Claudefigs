@@ -68,6 +68,34 @@ def clip(text: str) -> str:
     return re.sub(r"\s+", " ", text)[:CLIP]
 
 
+INJECTED_TAGS = (
+    "system-reminder",
+    "task-notification",
+    "agent-message",
+    "cross-session-message",
+    "local-command-stdout",
+    "local-command-stderr",
+    "local-command-caveat",
+    "command-name",
+    "command-message",
+    "command-args",
+    "tools-used-before-summary",
+)
+_TAG_ALTERNATION = "|".join(re.escape(tag) for tag in INJECTED_TAGS)
+_PAIRED_BLOCK = re.compile(rf"<({_TAG_ALTERNATION})(?:\s[^>]*)?>.*?</\1>", re.DOTALL)
+_UNTERMINATED_START = re.compile(rf"<(?:{_TAG_ALTERNATION})(?:\s[^>]*)?>")
+_ORPHAN_CLOSE = re.compile(rf"\A.*</(?:{_TAG_ALTERNATION})>", re.DOTALL)
+
+
+def strip_injected(text: str) -> str:
+    """Remove harness-injected tag blocks (paired, cut-off opening, orphan closing) from user text."""
+    text = _PAIRED_BLOCK.sub("", text)
+    if _UNTERMINATED_START.match(text.lstrip()):
+        text = ""
+    text = _ORPHAN_CLOSE.sub("", text, count=1)
+    return text.strip()
+
+
 def to_ms(value) -> float:
     """Convert an ISO string or a number into epoch milliseconds; 0 when unknown."""
     if isinstance(value, bool) or value is None:
@@ -148,11 +176,17 @@ def transcript_lines(text: str) -> list[Line]:
         role = "voce" if kind == "user" else "claude" if kind == "assistant" else None
         if role is None:
             continue
+        if kind == "user" and (entry.get("isMeta") or entry.get("isCompactSummary")):
+            continue
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         for block_kind, value in blocks_of(content):
             if block_kind == "tool":
                 out.append(Line(role="tool", text=activity_label(value)))
+            elif role == "voce":
+                cleaned = strip_injected(value)
+                if cleaned:
+                    out.append(Line(role=role, text=clip(cleaned)))
             else:
                 out.append(Line(role=role, text=clip(value)))
     return collapse_activity(out)[-TAIL:]

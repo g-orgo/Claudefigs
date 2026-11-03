@@ -160,6 +160,50 @@ class LinesAndLabels(Base):
         self.assertEqual(len(lines), data.TAIL)
         self.assertEqual(lines[-1].text, "m39")
 
+    def lines_of(self):
+        with open(self.path, encoding="utf-8") as handle:
+            return data.transcript_lines(handle.read())
+
+    def test_only_task_notification_gives_no_line(self):
+        self.write(entry("user", text("<task-notification>done</task-notification>")))
+        self.assertEqual(self.lines_of(), [])
+
+    def test_reminder_then_real_text_keeps_text(self):
+        self.write(entry("user", text("<system-reminder>ctx</system-reminder>\npedido real")))
+        self.assertEqual([(l.role, l.text) for l in self.lines_of()], [("voce", "pedido real")])
+
+    def test_real_text_then_reminder_keeps_text(self):
+        self.write(entry("user", text("pedido real <system-reminder>ctx</system-reminder>")))
+        self.assertEqual([(l.role, l.text) for l in self.lines_of()], [("voce", "pedido real")])
+
+    def test_is_meta_entry_gives_no_line(self):
+        self.write(json.dumps({"type": "user", "isMeta": True,
+                               "message": {"content": [text("meta")]}}))
+        self.assertEqual(self.lines_of(), [])
+
+    def test_compact_summary_entry_gives_no_line(self):
+        self.write(json.dumps({"type": "user", "isCompactSummary": True,
+                               "message": {"content": [text("resumo")]}}))
+        self.assertEqual(self.lines_of(), [])
+
+    def test_orphan_closing_tag_keeps_following_text(self):
+        self.write(entry("user", text("lixo </system-reminder> texto util")))
+        self.assertEqual([(l.role, l.text) for l in self.lines_of()], [("voce", "texto util")])
+
+    def test_unterminated_opening_tag_gives_no_line(self):
+        self.write(entry("user", text("<system-reminder>cortado no meio")))
+        self.assertEqual(self.lines_of(), [])
+
+    def test_assistant_quoting_tag_stays_intact(self):
+        self.write(entry("assistant", text("vi o <system-reminder> aqui")))
+        self.assertEqual([(l.role, l.text) for l in self.lines_of()],
+                         [("claude", "vi o <system-reminder> aqui")])
+
+    def test_user_unknown_tag_and_comparison_stay_intact(self):
+        self.write(entry("user", text("use <div> e a < b")))
+        self.assertEqual([(l.role, l.text) for l in self.lines_of()],
+                         [("voce", "use <div> e a < b")])
+
     def test_big_file_drops_cut_first_line(self):
         filler = entry("user", text("y" * 1000))
         last = entry("user", text("ultima"))
