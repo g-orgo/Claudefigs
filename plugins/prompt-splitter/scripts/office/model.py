@@ -26,3 +26,4 @@ class Worker:
     lines: list[Line] = field(default_factory=list)
     subagents: int = 0
     attachable: bool = False  # the agent registry knows this session, so `claude attach` can open it
+    room_title: str = ""  # title of the parent session of this split's group

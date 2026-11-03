@@ -43,6 +43,8 @@ O painel lista os splits desta sessão. `/splits` abre o painel em qualquer larg
 
 `claude split` e `claude --splits` abrem um escritório animado em tela cheia, que só observa; para escrever, clique no balão e a sessão abre em outra janela. É um programa próprio (`scripts/claude_office.py`), então não existe área de escrita e nenhuma sessão do Claude é iniciada. Precisa só de um terminal com truecolor.
 
+Cada execução de split vira uma sala: um grupo com 2 itens é uma sala com 2 pessoas trabalhando. A sala tem piso de cor própria, paredes nos dois fundos, porta e uma placa com o título da sessão de origem, a data e a quantidade de itens (`03/11 13:11, 2 itens`), e o tamanho dela acompanha o número de itens. Fora das salas fica o piso do corredor. Quem espera outro split anda só dentro da própria sala, sem atravessar parede.
+
 Cada split é um personagem em câmera isométrica, com uma mesa própria. Acima dele fica um balão com o final da atividade da sessão, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Lendo arquivos (x3)`) e o estado na última linha.
 
 | Estado do split | O que o personagem faz |
@@ -56,7 +58,7 @@ Cada split é um personagem em câmera isométrica, com uma mesa própria. Acima
 
 Clique em um balão para selecionar o split e abrir a sessão em uma nova janela do Konsole, no diretório dela e com o campo de texto para continuar a conversa; Enter faz o mesmo com o split selecionado. Sessões que o `claude agents` conhece abrem com `claude attach <id>`, inclusive as encerradas, que acordam ao abrir. As que saíram do registro abrem com `claude --resume <id completo>`, lido da transcrição. Um split que ainda não começou não tem o que abrir e só mostra um aviso no rodapé.
 
-Teclas: Tab, setas e a roda do mouse selecionam, `q` ou Ctrl+C saem. Os splits mais recentes ficam no topo, e a lista para no primeiro e no último em vez de dar a volta, inclusive na roda. Quando não cabe tudo, a seleção troca de página. Abaixo de 36x28 o programa pede para aumentar o terminal. Como o programa recebe o mouse, para selecionar texto na tela segure Shift ao arrastar.
+Teclas: Tab, setas e a roda do mouse selecionam, `q` ou Ctrl+C saem. As salas mais recentes vêm primeiro, e a lista para no primeiro e no último split em vez de dar a volta, inclusive na roda. Quando não cabe tudo, a seleção troca de página: as quebras caem entre salas, e só uma sala maior que a página inteira se divide, com `parte 2/4` na placa. Abaixo de 36x28 o programa pede para aumentar o terminal. Como o programa recebe o mouse, para selecionar texto na tela segure Shift ao arrastar.
 
 Mouse: clicar em um balão seleciona o split e abre a sessão; a roda move a seleção com a mesma regra das setas. Como o programa captura o mouse, para copiar texto da tela segure Shift ao arrastar.
 

@@ -282,5 +282,35 @@ class SessionOpening(Base):
             self.assertEqual(data.full_session_id("abc12345"), "")
 
 
+class RoomTitleTests(unittest.TestCase):
+    def record(self, parent=""):
+        rec = {"id": "r1", "name": "split-a", "group": "g", "label": "1", "index": 1, "started": 1000}
+        if parent:
+            rec["parent"] = parent
+            rec["parent_transcript"] = "/tmp/parent.jsonl"
+        return rec
+
+    def setUp(self):
+        data._room_titles.clear()
+
+    def test_room_title_comes_from_parent_title(self):
+        with mock.patch("status.parent_title", return_value="Sessao pai") as title:
+            workers = data.build_workers([self.record("abc123")], {}, NOW, read_lines=lambda p: [])
+        self.assertEqual(workers[0].room_title, "Sessao pai")
+        title.assert_called_once_with("abc123", "/tmp/parent.jsonl")
+
+    def test_second_call_within_period_reuses_cached_title(self):
+        with mock.patch("status.parent_title", return_value="Sessao pai") as title:
+            data.build_workers([self.record("abc123")], {}, NOW, read_lines=lambda p: [])
+            data.build_workers([self.record("abc123")], {}, NOW, read_lines=lambda p: [])
+        self.assertEqual(title.call_count, 1)
+
+    def test_empty_parent_gives_empty_title_without_call(self):
+        with mock.patch("status.parent_title", return_value="x") as title:
+            workers = data.build_workers([self.record()], {}, NOW, read_lines=lambda p: [])
+        self.assertEqual(workers[0].room_title, "")
+        title.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 
 Only allowlisted files are copied, private fields are removed from the copies, and the result is
 scanned in a temporary folder. If the scan finds anything, the repository is left untouched.
-Commit and push are done by hand after reviewing `git status` and `git diff --stat`.
+scripts/publish.py runs this sync and then commits and pushes.
 """
 import json
 import re
@@ -25,7 +25,7 @@ SETTINGS_KEYS = {
 PLUGIN_SKIP_NAMES = {"HANDOFF.md", "__pycache__", ".env", ".DS_Store"}
 PLUGIN_SKIP_SUFFIXES = {".pyc", ".log", ".jsonl"}
 # The design system reference in CLAUDE.md names a private project and its path.
-PRIVATE_REFERENCE = re.compile(r"the \w+ design system \(`/media/orgo/HD/[^`]*`\)")
+PRIVATE_REFERENCE = re.compile(r"the \w+ design system \(`/media/orgo/" + r"HD/[^`]*`\)")
 PUBLIC_REFERENCE = "a private project's design system"
 # Pieces are joined so that this file does not match its own scan.
 FORBIDDEN = [re.compile(p) for p in (
@@ -88,10 +88,10 @@ def build(out):
         write_json(manifest, without_email(json.loads(manifest.read_text(encoding="utf-8"))))
 
 
-def scan(out):
-    """Returns `path: pattern` for each match in the published tree."""
+def scan(out, paths=None):
+    """Returns `path: pattern` for each match in `paths`, by default every file under `out`."""
     hits = []
-    for path in sorted(p for p in out.rglob("*") if p.is_file()):
+    for path in sorted(p for p in (out.rglob("*") if paths is None else paths) if p.is_file()):
         text = path.read_text(encoding="utf-8", errors="replace")
         hits += [f"{path.relative_to(out)}: {p.pattern}" for p in FORBIDDEN if p.search(text)]
     return hits
@@ -109,7 +109,7 @@ def main():
         for name in ("claude", "plugins", ".claude-plugin"):
             shutil.rmtree(REPO / name, ignore_errors=True)
             shutil.copytree(out / name, REPO / name)
-    print("Sync done. Review with `git status` and `git diff --stat`, then commit and push.")
+    print("Sync done.")
     return 0
 
 

@@ -9,8 +9,9 @@ from unittest import mock
 from claude_office import PARTIAL, handle_key, keys_of, open_session, parse_mouse, session_command
 from office import props
 from office.model import Line, Worker
-from office.actors import resolve_target
+from office.actors import SLOTS, resolve_target
 from office.bubble import body_rows
+from office import rooms
 from office.scene import MIN_COLS, MIN_ROWS, Scene
 from office.sprites import Canvas
 from office.term import MOUSE_OFF, MOUSE_ON, Frame, Screen, char_width, diff
@@ -194,13 +195,13 @@ class HitTestTests(unittest.TestCase):
     def test_every_corner_of_each_bubble_hits_its_worker(self):
         scene = self.scene()
         visible = scene.visible()
-        for worker, (col, top, width, height) in zip(visible, scene._cells(len(visible))):
+        for worker, (col, top, width, height) in zip(visible, scene._cells()):
             for c, r in ((col, top), (col + width - 1, top + height - 1)):
                 self.assertEqual(scene.worker_at(c, r).id, worker.id)
 
     def test_just_outside_a_bubble_misses(self):
         scene = self.scene(1)
-        col, top, width, height = scene._cells(1)[0]
+        col, top, width, height = scene._cells()[0]
         for c, r in ((col - 1, top), (col + width, top), (col, top - 1), (col, top + height)):
             self.assertIsNone(scene.worker_at(c, r))
 
@@ -215,7 +216,7 @@ class HitTestTests(unittest.TestCase):
         scene = Scene(100, 30)
         scene.set_workers([make_worker(i) for i in range(scene.per_page + 1)])
         scene.selected_id = scene.workers[-1].id
-        col, top, _, _ = scene._cells(len(scene.visible()))[0]
+        col, top, _, _ = scene._cells()[0]
         self.assertEqual(scene.worker_at(col, top).id, scene.workers[-1].id)
 
 
@@ -235,7 +236,7 @@ class HandleKeyTests(unittest.TestCase):
 
     def test_left_press_on_a_bubble_selects_and_opens_it(self):
         scene = self.scene()
-        col, top, _, _ = scene._cells(3)[2]
+        col, top, _, _ = scene._cells()[2]
         with mock.patch("claude_office.open_session") as opened:
             handle_key(scene, f"\x1b[<0;{col + 2};{top + 2}M")
         self.assertEqual(scene.selected_id, "w2")
@@ -243,7 +244,7 @@ class HandleKeyTests(unittest.TestCase):
 
     def test_release_other_buttons_and_empty_cells_do_nothing(self):
         scene = self.scene()
-        col, top, _, _ = scene._cells(3)[2]
+        col, top, _, _ = scene._cells()[2]
         with mock.patch("claude_office.open_session") as opened:
             handle_key(scene, f"\x1b[<0;{col + 2};{top + 2}m")
             handle_key(scene, f"\x1b[<2;{col + 2};{top + 2}M")
@@ -355,6 +356,147 @@ class FurnitureTests(unittest.TestCase):
             for col in range(x, x + 16):
                 if monitor.rows[row][col] == props.METAL_D:
                     self.assertNotEqual(desk.rows[row][col], self.FLOOR)
+
+
+class RoomLayoutTests(unittest.TestCase):
+    def workers(self, group, count, title="Titulo", started=1_700_000_000_000.0):
+        return [Worker(id=f"{group}-{i}", session_id="", name="n", title="t", item_label=str(i + 1),
+                       group=group, index=i + 1, cwd="", started_ms=started, state="working",
+                       room_title=title) for i in range(count)]
+
+    def demo(self):
+        return (self.workers("demo", 7, "Reorganizar o modulo de login")
+                + self.workers("outra", 2, "Integrar pagamentos e permissoes")
+                + self.workers("terceira", 2, "Limpar modulos antigos"))
+
+    def test_group_workers_keeps_first_seen_order(self):
+        workers = self.workers("b", 1) + self.workers("a", 2) + self.workers("b", 1)
+        groups = rooms.group_workers(workers)
+        self.assertEqual([g[0].group for g in groups], ["b", "a"])
+        self.assertEqual([len(g) for g in groups], [2, 2])
+
+    def test_shape_seven_on_four_columns_is_four_by_two(self):
+        pages = rooms.paginate(self.workers("demo", 7), 200, 60)
+        room = pages[0][0]
+        self.assertEqual((room.cols, room.lines), (4, 2))
+
+    def test_paginate_200x60_keeps_fitting_groups_whole(self):
+        pages = rooms.paginate(self.demo(), 200, 60)
+        seen = {}
+        for number, page in enumerate(pages):
+            for room in page:
+                seen.setdefault(room.group, set()).add(number)
+        self.assertTrue(all(len(pages_of) == 1 for pages_of in seen.values()))
+        ids = [w.id for page in pages for room in page for w in room.workers]
+        self.assertEqual(sorted(ids), sorted(w.id for w in self.demo()))
+
+    def test_split_group_at_120x40_numbers_parts_and_starts_pages(self):
+        pages = rooms.paginate(self.workers("big", 9), 120, 40)
+        parts = [room for page in pages for room in page]
+        self.assertEqual([r.part for r in parts], list(range(1, len(parts) + 1)))
+        self.assertTrue(all(r.parts == len(parts) for r in parts))
+        self.assertEqual((pages[0][0].part, pages[0][0].group), (1, "big"))
+        self.assertEqual(sum(len(r.workers) for r in parts), 9)
+
+    def test_sign_text_has_date_and_count(self):
+        text = rooms.sign_text("Titulo", 1_700_000_000_000.0, 7, 1, 1, 200)
+        self.assertIn("7 itens", text)
+        self.assertTrue(text.startswith("Titulo  "))
+
+    def test_sign_text_singular_and_part(self):
+        self.assertIn("1 item", rooms.sign_text("T", 0, 1, 1, 1, 200))
+        self.assertNotIn("1 itens", rooms.sign_text("T", 0, 1, 1, 1, 200))
+        self.assertTrue(rooms.sign_text("T", 0, 9, 2, 4, 200).endswith("parte 2/4"))
+
+    def test_sign_text_keeps_meta_when_title_truncates(self):
+        text = rooms.sign_text("Um titulo bem longo para a sala", 0, 7, 1, 1, 30)
+        self.assertTrue(text.endswith("7 itens"))
+        self.assertIn("...", text)
+        self.assertLessEqual(rooms.display_width(text), 30)
+
+    def test_sign_text_drops_meta_when_narrow(self):
+        text = rooms.sign_text("Um titulo bem longo", 0, 7, 1, 1, 14)
+        self.assertNotIn("itens", text)
+        self.assertLessEqual(rooms.display_width(text), 14)
+
+    def test_room_cells_stay_inside_the_room(self):
+        for page in rooms.paginate(self.demo(), 200, 60):
+            for room in page:
+                for col, row, width, height in room.cells:
+                    self.assertGreaterEqual(col, room.left)
+                    self.assertLessEqual(col + width - 1, room.right)
+                    self.assertGreaterEqual(row, room.row)
+                    self.assertLessEqual(row + height, room.row + room.height)
+
+    def test_clamp_foot_stays_inside_walls_for_every_slot(self):
+        scene = Scene(200, 60)
+        scene.set_workers(self.demo())
+        for room in scene._rooms():
+            for worker in room.workers:
+                desk_x, desk_y = scene.actors[worker.id].desk
+                for dx, dy in SLOTS:
+                    x, y = room.clamp_foot(desk_x + dx, desk_y + dy)
+                    self.assertTrue(room.left + 9 <= x <= room.right - 9)
+                    self.assertTrue(room.floor_edge(x) + 1 <= y <= room.bottom - 2)
+
+
+class Phase2SceneTests(unittest.TestCase):
+    def workers(self, group, count, title):
+        return [Worker(id=f"{group}-{i}", session_id="", name="n", title="t", item_label=str(i + 1),
+                       group=group, index=i + 1, cwd="", started_ms=1_700_000_000_000.0, state="working",
+                       room_title=title) for i in range(count)]
+
+    def demo(self):
+        return (self.workers("demo", 7, "Reorganizar o modulo de login")
+                + self.workers("outra", 2, "Integrar pagamentos e permissoes")
+                + self.workers("terceira", 2, "Limpar modulos antigos"))
+
+    def test_selection_crosses_pages_and_stops_at_both_ends(self):
+        scene = Scene(200, 60)
+        scene.set_workers(self.demo())
+        self.assertEqual(scene.page(), 0)
+        scene.select(100)
+        self.assertEqual(scene.selected_id, scene.workers[-1].id)
+        self.assertEqual(scene.page(), 1)
+        scene.select(100)
+        self.assertEqual(scene.selected_id, scene.workers[-1].id)
+        scene.select(-100)
+        self.assertEqual(scene.selected_id, scene.workers[0].id)
+        self.assertEqual(scene.page(), 0)
+
+    def test_floor_pixel_inside_room_differs_from_corridor(self):
+        scene = Scene(200, 60)
+        scene.set_workers(self.demo())
+        room = scene._rooms()[0]
+        background = scene._background(scene._rooms())
+        x, y = room.left + 20, room.bottom - 3
+        self.assertNotEqual(background.rows[y][x], scene.corridor.rows[y][x])
+
+    def test_adjacent_rooms_have_different_palettes(self):
+        for page in rooms.paginate(self.demo(), 200, 60):
+            for first, second in zip(page, page[1:]):
+                self.assertNotEqual(first.palette, second.palette)
+
+    def test_wall_column_is_drawn_above_the_floor(self):
+        scene = Scene(200, 60)
+        scene.set_workers(self.demo())
+        room = scene._rooms()[0]
+        background = scene._background(scene._rooms())
+        x = room.left + 20
+        top = room.floor_edge(x) - (room.floor_y - room.top - 2)
+        self.assertEqual(background.rows[top - 1][x], props.OUTLINE)
+        self.assertEqual(background.rows[top][x], props.ROOM_PALETTES[room.palette][6])
+
+    def test_room_shell_writes_nothing_outside_the_room(self):
+        page = rooms.paginate(self.demo(), 200, 60)[1]
+        room = page[0]
+        sentinel = (1, 2, 3)
+        canvas = Canvas(200, 118, sentinel)
+        props.draw_room_shell(canvas, room, rooms.display_width(room.sign))
+        for y in range(canvas.height):
+            for x in range(canvas.width):
+                if x < room.left or x > room.right:
+                    self.assertEqual(canvas.rows[y][x], sentinel)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ from .model import Worker
 
 BEAT = 16  # the waiter/target interaction has three beats of this many ticks.
 STAND = (36, 6)  # foot point beside the own desk, relative to its corner.
-SLOTS = [(46, 26), (16, 34), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
+SLOTS = [(46, 26), (16, 30), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
 POSE = {"code": "type", "term": "type", "web": "type", "doc": "read", "delegate": "phone"}
 SCREEN = {"code": "code", "term": "term", "web": "web", "doc": "doc", "delegate": "term"}
 IDLE = ("coffee", "stretch", "nap")

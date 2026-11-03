@@ -268,6 +268,24 @@ def map_state(rec: dict, agent, path: str, now_ms: float, started_ms: float):
     return "done", "none"
 
 
+_room_titles: dict[str, tuple[float, str]] = {}
+ROOM_TITLE_PERIOD = 30.0  # seconds between re-reads of a parent transcript title
+
+
+def room_title_of(rec: dict, now: float | None = None) -> str:
+    """Return the parent session title for a split, reading its transcript at most every ROOM_TITLE_PERIOD seconds."""
+    parent = str(rec.get("parent") or "")
+    if not parent:
+        return ""
+    current = time.monotonic() if now is None else now
+    cached = _room_titles.get(parent)
+    if cached is not None and current - cached[0] < ROOM_TITLE_PERIOD:
+        return cached[1]
+    title = status.parent_title(parent, rec.get("parent_transcript") or "")
+    _room_titles[parent] = (current, title)
+    return title
+
+
 def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=default_read_lines) -> list[Worker]:
     """Map split records, live agents and transcripts into ordered Workers. Pure apart from file reads."""
     workers: list[Worker] = []
@@ -299,6 +317,7 @@ def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=d
             lines=read_lines(path) if path else [],
             subagents=subagents,
             attachable=agent_dict is not None,
+            room_title=room_title_of(rec),
         ))
     return order_workers(workers)
 

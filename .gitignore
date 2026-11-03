@@ -46,3 +46,6 @@ __pycache__/
 *.jsonl
 node_modules/
 .DS_Store
+
+# Local Claude Code worktrees of this clone
+/.claude/
