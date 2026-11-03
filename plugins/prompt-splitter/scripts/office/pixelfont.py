@@ -1,11 +1,14 @@
-"""A small bitmap font drawn in canvas pixels: five rows tall, one descender row, pt-BR accents composed on top."""
+"""A small bitmap font drawn in sextant characters (2x3 per cell): five rows tall, one descender row, pt-BR accents on top."""
 import re
 import unicodedata
 from functools import lru_cache
 
-from .sprites import Canvas, Color
+from .sprites import Color
+from .term import Frame
 
-LINE_PX = 8  # one accent row above capitals, five rows, one descender row and a gap.
+LINE_ROWS = 3  # terminal rows of one line: one accent row, five rows, one descender row and two of gap, at 3 per cell.
+CELL_X, CELL_Y = 2, 3  # font pixels per terminal cell.
+ACCENT_ROWS = 1  # the cap line starts this many font rows into the line, leaving room for accents.
 
 # Rows from the cap line down, separated by "|"; a sixth row is the descender.
 GLYPHS = {
@@ -69,15 +72,29 @@ def text_width(text: str) -> int:
     return max(0, sum(glyph(ch)[0] + 1 for ch in text if glyph(ch)[0]) - 1)
 
 
-def draw_text(canvas: Canvas, x: int, y: int, text: str, color: Color) -> int:
-    """Draws one line with its cap line at y and returns the column right after it."""
+def _sextant(bits: int) -> str:
+    """The character with these cells lit; bit 0 is top left and bit 5 bottom right. Half and full cells have older codes."""
+    special = {0: " ", 21: "▌", 42: "▐", 63: "█"}
+    if bits in special:
+        return special[bits]
+    return chr(0x1FB00 + bits - (1 if bits < 21 else 2 if bits < 42 else 3))
+
+
+def draw_text(frame: Frame, col: int, row: int, text: str, fg: Color, bg: Color, x: int = 0) -> int:
+    """Draws one line whose accent row starts at (`col`, `row`), `x` font pixels in; returns the font column after it."""
+    cells: dict[tuple[int, int], int] = {}
     for ch in text:
         width, pixels = glyph(ch)
         if not width:
             continue
         for dx, dy in pixels:
-            canvas.put(x + dx, y + dy, color)
+            px, py = x + dx, dy + ACCENT_ROWS
+            key = (col + px // CELL_X, row + py // CELL_Y)
+            cells[key] = cells.get(key, 0) | 1 << (py % CELL_Y * CELL_X + px % CELL_X)
         x += width + 1
+    for (c, r), bits in cells.items():
+        if 0 <= r < frame.nrows and 0 <= c < frame.cols:
+            frame.cells[r][c] = (_sextant(bits), fg, bg, False)
     return x
 
 

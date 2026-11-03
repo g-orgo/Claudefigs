@@ -5,12 +5,11 @@ from . import pixelfont
 from .sprites import Canvas
 from .term import Frame
 
-PANEL_ROWS, PANEL_ROWS_SHORT = 18, 14  # two lines of text, or one when the terminal is short.
+PANEL_ROWS, PANEL_ROWS_SHORT = 14, 11  # two lines of text, or one when the terminal is short.
 SHORT_BELOW = 46  # terminals with fewer rows get the one-line box.
 MIN_ROWS = 28  # below this the view itself asks for a bigger terminal, so there is no field.
 MAX_TEXT = 4000
-MAX_WIDTH = 120
-BACKDROP = (38, 34, 54)
+MAX_WIDTH = 96
 OUTLINE = (58, 36, 40)
 WOOD = (166, 98, 52)
 WOOD_FOCUSED = (214, 122, 48)
@@ -22,13 +21,17 @@ INK_BROWN = (74, 40, 32)
 FADED = (158, 118, 86)
 PLATE_TEXT = (255, 243, 214)
 PLACEHOLDER_IDLE = "Aperte Tab para escrever..."
-PLATE_PX, PLATE_OVERLAP, PLATE_GAP = 10, 3, 3
-DESTINATION_MIN_PX = 60  # the key hints give way before the destination shrinks below this.
-BORDER_PX, PAD_X = 4, 3
-CARET_PX = 3
+# Vertical layout in half-cell pixels: the plate's top edge, then its text rows, then the box's top border.
+PLATE_ROWS = 4  # one row of edge and three of text; the box's outline closes the plate from below.
+PLATE_PAD = 1  # cells of wood each side of the plate text.
+PLATE_GAP = 2
+DESTINATION_MIN = 30  # the key hints give way before the destination shrinks below this many cells.
+BORDER_PX = 3
+TEXT_TOP_ROWS = 2  # rows from the box's top edge to the first line of text.
+PAD_CELLS = 6  # cells from the box's left edge to the text.
+CARET = "_"
 # Pixels cut from the first rows of each corner, per ring of the border.
-CUTS = ((4, 2, 1, 1), (3, 1, 1), (2, 1), (1,))
-RINGS = ((0, 0), (1, 1), (3, 2), (4, 3))  # (inset, index into CUTS) from the outside in.
+RINGS = ((0, (3, 1, 1)), (1, (2, 1)), (2, (1,)), (3, (1,)))  # (inset, cuts) from the outside in.
 
 
 class Composer:
@@ -81,22 +84,26 @@ def _rounded(canvas: Canvas, x: int, y: int, width: int, height: int, color, cut
 def _box(width: int, rows: int, focused: bool) -> Canvas:
     """The empty box; `None` pixels keep whatever the view has behind them, so the corners stay round."""
     canvas = Canvas(width, rows * 2, None)
-    top = PLATE_PX - PLATE_OVERLAP
+    top = PLATE_ROWS * 2
     height = rows * 2 - top
     colors = (OUTLINE, WOOD_FOCUSED if focused else WOOD, GOLD_FOCUSED if focused else GOLD, PARCHMENT)
-    for (inset, cut), color in zip(RINGS, colors):
-        _rounded(canvas, inset, top + inset, width - 2 * inset, height - 2 * inset, color, CUTS[cut])
+    for (inset, cuts), color in zip(RINGS, colors):
+        _rounded(canvas, inset, top + inset, width - 2 * inset, height - 2 * inset, color, cuts)
     for x in range(BORDER_PX + 1, width - BORDER_PX - 1):
         canvas.put(x, top + BORDER_PX, PARCHMENT_SHADE)
     return canvas
 
 
-def _plate(canvas: Canvas, x: int, text: str, focused: bool) -> None:
+def _plate_width(text: str) -> int:
+    return (pixelfont.text_width(text) + 1) // pixelfont.CELL_X + 2 * PLATE_PAD + 2
+
+
+def _plate(canvas: Canvas, x: int, width: int, focused: bool) -> None:
     """A wooden name plate resting on the top edge of the box."""
-    width = pixelfont.text_width(text) + 6
-    _rounded(canvas, x, 0, width, PLATE_PX, OUTLINE, (2, 1))
-    _rounded(canvas, x + 1, 1, width - 2, PLATE_PX - 2, WOOD_FOCUSED if focused else WOOD, (1,))
-    pixelfont.draw_text(canvas, x + 3, 3, text, PLATE_TEXT)
+    fill = WOOD_FOCUSED if focused else WOOD
+    height = PLATE_ROWS * 2 + 1
+    _rounded(canvas, x, 0, width, height, OUTLINE, (1,))
+    _rounded(canvas, x + 1, 1, width - 2, height - 1, fill, ())
 
 
 def overlay(frame: Frame, canvas: Canvas, col: int, top: int) -> None:
@@ -122,31 +129,37 @@ def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, compo
     if width < 24:
         return
     canvas = _box(width, rows, composer.focused).copy()
-    inner = width - 2 * (BORDER_PX + PAD_X)
+    inner = width - 2 * PAD_CELLS
     span = width - 2 * (BORDER_PX + 1)
-    wanted = min(pixelfont.text_width(destination), DESTINATION_MIN_PX) + 6
-    hint = next((h for h in hints if pixelfont.text_width(h) + 6 + PLATE_GAP + wanted <= span), "")
-    hint_w = pixelfont.text_width(hint) + 6 if hint else 0
-    plate = pixelfont.clip(destination, span - 6 - (hint_w + PLATE_GAP if hint else 0))
+    wanted = min(_plate_width(destination), DESTINATION_MIN)
+    hint = next((h for h in hints if _plate_width(h) + PLATE_GAP + wanted <= span), "")
+    hint_w = _plate_width(hint) if hint else 0
+    room = span - (hint_w + PLATE_GAP if hint else 0) - 2 * PLATE_PAD - 2
+    plate = pixelfont.clip(destination, room * pixelfont.CELL_X)
+    plate_x, hint_x = BORDER_PX + 1, width - BORDER_PX - 1 - hint_w
+    fill = WOOD_FOCUSED if composer.focused else WOOD
     if plate:
-        _plate(canvas, BORDER_PX + 1, plate, composer.focused)
+        _plate(canvas, plate_x, _plate_width(plate), composer.focused)
     if hint:
-        _plate(canvas, width - BORDER_PX - 1 - hint_w, hint, composer.focused)
+        _plate(canvas, hint_x, hint_w, composer.focused)
+    overlay(frame, canvas, col, top)
 
-    box_top = PLATE_PX - PLATE_OVERLAP + BORDER_PX
+    if plate:
+        pixelfont.draw_text(frame, col + plate_x + 1 + PLATE_PAD, top + 1, plate, PLATE_TEXT, fill)
+    if hint:
+        pixelfont.draw_text(frame, col + hint_x + 1 + PLATE_PAD, top + 1, hint, PLATE_TEXT, fill)
+
     capacity = 2 if rows == PANEL_ROWS else 1
-    free = rows * 2 - box_top - BORDER_PX
-    first = box_top + (free - capacity * pixelfont.LINE_PX) // 2 + 2
-    x = BORDER_PX + PAD_X
+    first = top + PLATE_ROWS + TEXT_TOP_ROWS
+    x = col + PAD_CELLS
     if composer.text:
-        lines = pixelfont.wrap(composer.text, inner - CARET_PX - 1)[-capacity:]
+        lines = pixelfont.wrap(composer.text, inner * pixelfont.CELL_X - pixelfont.text_width(CARET) - 1)[-capacity:]
         for i, line in enumerate(lines):
-            pixelfont.draw_text(canvas, x, first + i * pixelfont.LINE_PX, line, INK_BROWN)
+            pixelfont.draw_text(frame, x, first + i * pixelfont.LINE_ROWS, line, INK_BROWN, PARCHMENT)
     else:
         lines = ("",)
         if not composer.focused:
-            pixelfont.draw_text(canvas, x, first, pixelfont.clip(PLACEHOLDER_IDLE, inner), FADED)
+            pixelfont.draw_text(frame, x, first, pixelfont.clip(PLACEHOLDER_IDLE, inner * pixelfont.CELL_X), FADED, PARCHMENT)
     if composer.focused and (tick // 4) % 2 == 0:
-        end = x + pixelfont.text_width(lines[-1]) + (1 if lines[-1] else 0)
-        pixelfont.draw_text(canvas, end, first + (len(lines) - 1) * pixelfont.LINE_PX, "_", INK_BROWN)
-    overlay(frame, canvas, col, top)
+        pixelfont.draw_text(frame, x, first + (len(lines) - 1) * pixelfont.LINE_ROWS, lines[-1] + CARET, INK_BROWN, PARCHMENT)
+

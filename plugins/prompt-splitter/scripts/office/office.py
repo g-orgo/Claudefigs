@@ -9,9 +9,9 @@ import tempfile
 import threading
 import time
 
-from . import life
+from . import hallart, life, props, sprites
 from .bubble import INK, clean
-from .composer import BACKDROP, MIN_ROWS, Composer, draw_composer, field_geometry, panel_rows
+from .composer import MIN_ROWS, Composer, draw_composer, field_geometry, panel_rows
 from .data import full_session_id
 from .hall import BACK, WAREHOUSE, Hall, doors_of
 from .hallart import BAY_W
@@ -23,6 +23,7 @@ from .term import Frame
 SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DISPATCH = os.path.join(SCRIPTS, "dispatch.py")
 FLOOR_GAP = 2  # rows of floor kept between the box and the footer in the wide hall.
+EXTRA_FLOOR_MARGIN = 1  # rows of floor above and below the box where the floor is extended for it.
 ROOM_BUSY = ("working", "thinking")
 COPY_WORDING = re.compile(r"(?i)\b(copy|c[oó]pia|started a copy)\b")
 BACK_LABEL, BACK_FILL = " < Voltar ", (232, 178, 92)  # the bubble look: wood gold, ink text
@@ -36,6 +37,7 @@ class Office:
         self.sender = sender
         self.demo = demo
         self.composer = Composer()
+        self._floor = None
         self.results: queue.Queue = queue.Queue()
         self.inflight = False
         view_rows = self._view_rows()
@@ -51,8 +53,8 @@ class Office:
         self._sync_covered()
 
     def _view_rows(self) -> int:
-        """Rows of a view with desks or doors all over it: the box gets its own strip when the view still fits beside it."""
-        left = self.rows - panel_rows(self.rows)
+        """Rows of a view with desks or doors all over it: the floor grows below it for the box, if the view still fits."""
+        left = self.rows - panel_rows(self.rows) - 2 * EXTRA_FLOOR_MARGIN
         return left if self.composer_shown() and left >= MIN_ROWS else self.rows
 
     def _hall_rows(self) -> int:
@@ -76,7 +78,9 @@ class Office:
         view = self.view()
         room = None
         top = self.rows - 1 - rows
-        if view is self.hall and self._hall_is_wide():
+        if view.rows < self.rows:
+            top -= EXTRA_FLOOR_MARGIN
+        elif view is self.hall and self._hall_is_wide():
             top -= FLOOR_GAP
             free = [panel for panel in self.hall.plan.panels if panel.free]
             if free:
@@ -156,13 +160,23 @@ class Office:
         return frame
 
     def _with_strip(self, view: Frame) -> Frame:
-        """Opens a band for the box between the view and its footer, so the footer stays on the last row."""
+        """Grows the view's floor down to the footer, so the box floats on it and the footer stays on the last row."""
         frame = Frame(self.cols, self.rows)
         frame.cells[:view.nrows - 1] = view.cells[:-1]
-        for row in range(view.nrows - 1, self.rows - 1):
-            frame.text(0, row, " " * self.cols, FOOTER_FG, BACKDROP)
+        floor = self._floor_cells()
+        frame.cells[view.nrows - 1:self.rows - 1] = [line[:] for line in floor[view.nrows - 1:self.rows - 1]]
         frame.cells[self.rows - 1] = view.cells[-1]
         return frame
+
+    def _floor_cells(self) -> list:
+        """The current view's floor tiles at full height; they depend only on x and y, so they meet the view's own."""
+        key = (self.mode == "warehouse", self.cols, self.rows)
+        if self._floor is None or self._floor[0] != key:
+            # The warehouse lane marking sits at the canvas bottom: spare rows push it out of the frame.
+            canvas = sprites.Canvas(self.cols, self.rows * 2 + 8)
+            (hallart.draw_warehouse_floor if key[0] else props.draw_corridor)(canvas)
+            self._floor = (key, Frame.from_canvas(canvas, self.cols, self.rows).cells)
+        return self._floor[1]
 
     def back_button(self) -> tuple[int, int, int] | None:
         """Where the Voltar button sits as (col, row, width): room at the left, warehouse centered; None in the hall."""

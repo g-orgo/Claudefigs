@@ -72,7 +72,7 @@ class ComposerModelTests(unittest.TestCase):
         self.assertFalse(draft.focused)
 
     def test_field_geometry_is_capped_and_centered(self):
-        self.assertEqual(field_geometry(200), (120, 40))
+        self.assertEqual(field_geometry(200), (96, 52))
         self.assertEqual(field_geometry(60), (56, 2))
 
 
@@ -92,8 +92,8 @@ FLOOR = (1, 2, 3)
 class DrawTests(unittest.TestCase):
     def test_box_is_all_pixels_with_round_corners_over_the_floor(self):
         frame = field_snapshot(Composer())
-        chars = {cell[0] for line in frame.cells for cell in line}
-        self.assertLessEqual(chars, {" ", "▀"})
+        wide = [cell[0] for line in frame.cells for cell in line if len(cell[0]) != 1]
+        self.assertEqual(wide, [])
         self.assertEqual(frame.cells[PANEL_ROWS - 1][0], (" ", None, FLOOR, False))
         self.assertNotEqual(frame.cells[PANEL_ROWS - 1][40][2], FLOOR)
 
@@ -144,6 +144,17 @@ class PixelFontTests(unittest.TestCase):
         self.assertTrue(clipped.endswith("…"))
 
 
+class SextantTests(unittest.TestCase):
+    def test_codes_skip_the_older_half_and_full_blocks(self):
+        self.assertEqual(pixelfont._sextant(1), "\U0001FB00")
+        self.assertEqual(pixelfont._sextant(20), "\U0001FB13")
+        self.assertEqual(pixelfont._sextant(22), "\U0001FB14")
+        self.assertEqual(pixelfont._sextant(41), "\U0001FB27")
+        self.assertEqual(pixelfont._sextant(43), "\U0001FB28")
+        self.assertEqual(pixelfont._sextant(62), "\U0001FB3B")
+        self.assertEqual([pixelfont._sextant(v) for v in (0, 21, 42, 63)], [" ", "▌", "▐", "█"])
+
+
 class PlacementTests(unittest.TestCase):
     def test_wide_hall_box_sits_on_the_floor_between_the_lower_doors(self):
         office = make_office(rows=65)
@@ -158,8 +169,10 @@ class PlacementTests(unittest.TestCase):
         office = make_office(rows=65)
         office.mode = "room"
         _, top, _, rows = office.field_rect()
-        self.assertEqual(office.scene.rows - 1, top)
-        self.assertEqual(top + rows, 64)
+        self.assertGreaterEqual(top, office.scene.rows - 1)
+        self.assertLess(top + rows, 64)
+        floor = office.render().cells[office.scene.rows][0]
+        self.assertNotEqual(floor[2], (38, 34, 54))
         footer = "".join(cell[0] for cell in office.render().cells[64])
         self.assertTrue(footer.strip())
 
