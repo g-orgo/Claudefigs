@@ -361,11 +361,15 @@ class Office:
         self.view().hover(col, row)
 
     def scroll(self, delta: int) -> None:
-        if self.mode == "room" and self.composer.focused and self.pointer is not None:
-            worker = self.scene.worker_at(*self.pointer)
+        """Wheel in a room: scrolls the bubble under the pointer; anywhere else it turns the page."""
+        if self.mode == "room" and self.pointer is not None:
+            covered = self.in_composer(*self.pointer) or self.hits_back(*self.pointer)
+            worker = None if covered else self.scene.worker_at(*self.pointer)
             if worker is not None:
-                self.scene.scroll(delta, worker)  # the bubble under the pointer, without changing the selection.
-                return
+                self.scene.scroll(delta, worker)  # never changes the selection, which a draft may be aimed at.
+            else:
+                self.scene.turn_page(delta)
+            return
         self.view().scroll(delta)
 
     def press(self) -> Worker | None:

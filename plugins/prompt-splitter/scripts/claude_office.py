@@ -19,6 +19,8 @@ from office.office import Office  # noqa: E402
 from office.term import Frame, Screen, diff  # noqa: E402
 
 FRAME_S = 1 / 8
+ESC_S = 0.05  # a lone Esc this old is the key, not the start of a sequence.
+DRAW_S = 1 / 30  # input redraws sooner than the next tick, but a mouse flood does not draw per report.
 REFRESH_TICKS = 4
 FONT = "/usr/share/fonts/google-noto/NotoSansMono-Regular.ttf"
 NEXT = {"\x1b[C", "\x1b[B"}
@@ -193,6 +195,35 @@ def offline(args: argparse.Namespace, source) -> int:
     return 0
 
 
+class FrameClock:
+    """Paces the viewer: ticks at a fixed rate whatever the input does, redraws after input at most every DRAW_S."""
+
+    def __init__(self, now: float):
+        self.next_tick = now
+        self.last_draw = now - DRAW_S
+        self.dirty = True
+
+    def tick_due(self, now: float) -> bool:
+        if now < self.next_tick:
+            return False
+        self.next_tick = now + FRAME_S
+        self.dirty = True
+        return True
+
+    def draw_due(self, now: float) -> bool:
+        if not self.dirty or now - self.last_draw < DRAW_S:
+            return False
+        self.dirty, self.last_draw = False, now
+        return True
+
+    def wait(self, now: float) -> float:
+        """Seconds until the next tick, or the pending redraw if that comes first."""
+        until = self.next_tick - now
+        if self.dirty:
+            until = min(until, self.last_draw + DRAW_S - now)
+        return max(0, until)
+
+
 def run(source, demo: bool = False) -> int:
     if not sys.stdout.isatty() or not sys.stdin.isatty():
         print("claude split precisa de um terminal.", file=sys.stderr)
@@ -204,30 +235,35 @@ def run(source, demo: bool = False) -> int:
     screen = Screen()
     scene = Office(*shutil.get_terminal_size(), sender=launch, demo=demo)
     source.start()
-    pending = ""
+    pending, pending_at = "", 0.0
     paste = None  # keys of a bracketed paste in progress, or None
     decoder = codecs.getincrementaldecoder("utf-8")(errors="ignore")
     try:
         screen.enter()
         sys.stdout.write("\x1b[?2004h")
         sys.stdout.flush()
+        clock = FrameClock(time.monotonic())
         while True:
-            started = time.monotonic()
+            now = time.monotonic()
             if resized[0]:
                 resized[0] = False
                 scene.resize(*shutil.get_terminal_size())
-            if scene.tick % REFRESH_TICKS == 0:
-                scene.set_workers(source.snapshot())
-            scene.step()
-            screen.present(scene.render())
-            wait = max(0, FRAME_S - (time.monotonic() - started))
-            ready = select.select([sys.stdin], [], [], wait)[0]
-            if not ready and pending == "\x1b":
+                clock.dirty = True
+            if clock.tick_due(now):
+                if scene.tick % REFRESH_TICKS == 0:
+                    scene.set_workers(source.snapshot())
+                scene.step()
+            if clock.draw_due(now):
+                screen.present(scene.render())
+            ready = select.select([sys.stdin], [], [], clock.wait(time.monotonic()))[0]
+            if not ready and pending == "\x1b" and time.monotonic() - pending_at >= ESC_S:
                 pending = ""  # nothing followed it, so it was the Esc key and not the start of a sequence.
                 handle_key(scene, "\x1b")
             if ready:
+                clock.dirty = True
                 keys = keys_of(pending + decoder.decode(os.read(sys.stdin.fileno(), 1024)))
                 pending = keys.pop() if keys and PARTIAL.fullmatch(keys[-1]) else ""
+                pending_at = time.monotonic()
                 for key in keys:
                     if paste is not None:
                         if key == PASTE_END:

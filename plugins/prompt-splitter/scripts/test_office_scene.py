@@ -6,12 +6,13 @@ import termios
 import unittest
 from unittest import mock
 
-from claude_office import PARTIAL, handle_key, keys_of, open_session, parse_mouse, session_command
+from claude_office import DRAW_S, FRAME_S, PARTIAL, FrameClock, handle_key, keys_of, open_session, parse_mouse, session_command
 from office import props
 from office.model import Line, Worker
 from office.actors import SLOTS, resolve_target
 from office.bubble import body_rows, chat_geometry
 from office import rooms
+from office.demo import demo_workers
 from office.composer import BACK_H, BACK_W, INK_BROWN
 from office.office import BACK_GAP, COPY_WORDING, Office
 from office.scene import MIN_COLS, MIN_ROWS, Scene
@@ -732,6 +733,64 @@ class Phase2SceneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FrameClockTests(unittest.TestCase):
+    def test_input_wakeups_do_not_speed_up_the_ticks(self):
+        clock = FrameClock(0.0)
+        ticks = sum(clock.tick_due(i / 1000) for i in range(1000))  # 1000 wakeups in one second.
+        self.assertEqual(ticks, round(1 / FRAME_S))
+
+    def test_input_redraws_are_limited_and_sooner_than_the_tick(self):
+        clock = FrameClock(0.0)
+        self.assertTrue(clock.tick_due(0.0))
+        self.assertTrue(clock.draw_due(0.0))
+        clock.dirty = True
+        self.assertFalse(clock.draw_due(DRAW_S / 2))
+        self.assertAlmostEqual(clock.wait(DRAW_S / 2), DRAW_S / 2)
+        self.assertTrue(clock.draw_due(DRAW_S))
+        self.assertFalse(clock.draw_due(DRAW_S * 3))  # nothing changed since.
+
+
+class WheelFollowsPointerTests(unittest.TestCase):
+    def office(self) -> Office:
+        office = Office(200, 60, sender=lambda argv, cwd: (0, ""))
+        workers = demo_workers()
+        office.set_workers(workers)
+        office.press()
+        office.render()
+        self.assertGreater(len(office.scene.pages), 1)
+        return office
+
+    def test_wheel_away_from_a_bubble_turns_the_page_and_back(self):
+        office = self.office()
+        left, top, _, _ = office.scene._cells()[0]
+        handle_key(office, f"\x1b[<35;{left + 3};{top + 3}M")
+        selected = office.scene.selected_id
+        handle_key(office, "\x1b[<65;2;40M")  # wheel down over the floor, far from the selected bubble.
+        self.assertEqual(office.scene.page(), 1)
+        self.assertEqual(office.scene.selected_id, selected)
+        handle_key(office, "\x1b[<64;2;40M")
+        self.assertEqual(office.scene.page(), 0)
+
+    def test_wheel_over_a_bubble_scrolls_it_and_keeps_the_page(self):
+        office = self.office()
+        worker = office.scene.visible()[0]
+        worker.lines = [Line("claude", f"linha {n}") for n in range(60)]
+        left, top, _, _ = office.scene._cells()[0]
+        handle_key(office, f"\x1b[<64;{left + 3};{top + 3}M")
+        self.assertEqual(office.scene.page(), 0)
+        self.assertGreater(office.scene.chat_scroll.get(worker.id, 0), 0)
+
+    def test_room_door_is_not_cut_by_the_bubbles(self):
+        office = self.office()
+        canvas = Canvas(200, 120)
+        room = office.scene._rooms()[-1]
+        props.draw_room_shell(canvas, room, 10)
+        bubble_end = (room.row + 1 + room.bubble) * 2
+        door_x = room.right - 10
+        rows = [y for y in range(canvas.height) if canvas.rows[y][door_x] == props.WOOD_L]
+        self.assertGreaterEqual(min(rows), bubble_end)
 
 
 class HoverSelectionTests(unittest.TestCase):

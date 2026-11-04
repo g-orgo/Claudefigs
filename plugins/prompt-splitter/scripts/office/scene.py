@@ -13,8 +13,8 @@ NOTICE_TICKS = 24
 BACKGROUND_CACHE = 32
 WHEEL_ROWS = 3  # chat rows per wheel notch
 CONTROLS = [
-    "Mouse ou esquerda/direita selecionam, cima/baixo e roda rolam o chat  Enter/clique abre  Esc volta  q sai",
-    "Setas selecionam, cima/baixo e roda rolam o chat  Enter abre  Esc volta  q sai",
+    "Mouse ou esquerda/direita selecionam, cima/baixo rolam o chat, roda rola o balão ou muda a página  Enter/clique abre  Esc volta  q sai",
+    "Setas selecionam, roda rola o balão ou muda a página  Enter abre  Esc volta  q sai",
     "Setas e roda rolam  Enter abre  Esc volta  q sai",
 ]
 
@@ -72,8 +72,12 @@ class Scene:
             self.reveal()
 
     def scroll(self, delta: int, worker: Worker | None = None) -> None:
-        """Wheel: one notch moves the given chat (default: the selected one) by WHEEL_ROWS; negative is older. Pages do not turn."""
+        """One wheel notch moves the given chat (default: the selected one) by WHEEL_ROWS; negative is older."""
         self.chat(-delta * WHEEL_ROWS, worker)
+
+    def turn_page(self, delta: int) -> None:
+        """Wheel away from any bubble: moves to the next or previous page, keeping the selection."""
+        self._page = max(0, min(self.page() + delta, len(self.pages) - 1))
 
     def _cell_of(self, worker: Worker) -> tuple[int, int] | None:
         """The bubble width and height of a worker on the displayed page, if it is shown."""

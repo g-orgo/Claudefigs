@@ -216,17 +216,18 @@ def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
         for y in range(b - height, b + 1):
             canvas.put(x, y, OUTLINE)
 
-    depth = min(14, height - 3)
-    door = range(right - 19, right - 6)
+    # The first desk line's bubbles end 6 pixels above floor_y: the lintel stays below them, so no bubble cuts the door.
+    door = range(right - 15, right - 6)
+    lintel = room.floor_y - 4
     for x in door:
         b = base(x)
         frame = x in (door[0], door[-1])
-        for y in range(b - depth, b):
-            canvas.put(x, y, WOOD_L if frame or y == b - depth else DOOR_DARK)
+        for y in range(lintel, b):
+            canvas.put(x, y, WOOD_L if frame or y == lintel else DOOR_DARK)
+        canvas.put(x, lintel - 1, OUTLINE)
         canvas.put(x, b, WOOD)
     for x in (door.start - 1, door.stop):
-        b = base(x)
-        for y in range(b - depth - 1, b):
+        for y in range(lintel - 1, base(x)):
             canvas.put(x, y, OUTLINE)
 
     for x in range(left + 1, right):
