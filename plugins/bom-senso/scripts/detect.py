@@ -11,6 +11,7 @@ NOT_USER_PREFIXES = ("another claude session sent", "resultados do split", "pedi
                      "original request", "this session is being continued")
 PLUGIN_MESSAGE = re.compile(r"the [\w-]+ plugin sent a message")
 OWN_SLIP = re.compile(r"\b(falei|escrevi|digitei|notei) errado\b|\bperdao\b|\bfoi mal\b|\berro meu\b")
+EXPLICIT_MENTION = re.compile(r"\bbom senso\b")
 CORRECTION = re.compile("|".join((
     r"\bvoce (nao|esqueceu|ignorou|alucinou|deixou|errou|entendeu errado|esta enganado)\b",
     r"\balucin",
@@ -39,6 +40,11 @@ def is_user_text(prompt):
     """False for empty prompts, slash commands and messages sent by plugins or other sessions."""
     text = normalize(prompt).strip()
     return bool(text) and not (text.startswith(("/", "<") + NOT_USER_PREFIXES) or PLUGIN_MESSAGE.match(text))
+
+
+def mentions_bom_senso(prompt):
+    """True when the user names the lapse themselves, so recording needs no question."""
+    return is_user_text(prompt) and bool(EXPLICIT_MENTION.search(normalize(prompt)))
 
 
 def correction_signal(prompt):

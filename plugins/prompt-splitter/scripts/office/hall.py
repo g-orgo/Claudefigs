@@ -53,6 +53,7 @@ class Hall:
         self.warehouse, self.place = warehouse, place
         self.doors: list[Door] = []
         self.selected_key: str | None = None
+        self.show_selection = True  # False while the composer or Voltar has the pointer or focus.
         self.actors: dict = {}
         self.notice, self.notice_until, self.tick = "", 0, 0
         self._page = 0
@@ -133,6 +134,12 @@ class Hall:
             if panel.x <= col < panel.x + hallart.BAY_W + hallart.DEPTH and panel.y - TOP_PX <= row * 2 < panel.y + shift + hallart.BAY_H:
                 return key
         return None
+
+    def hover(self, col: int, row: int) -> None:
+        """Mouse motion: the door or table under the pointer becomes the selected one; anything else keeps it."""
+        key = self.key_at(col, row)
+        if key is not None:
+            self.selected_key = key
 
     def notify(self, text: str) -> None:
         self.notice, self.notice_until = text, self.tick + 24
@@ -256,24 +263,33 @@ class Hall:
     def render(self) -> Frame:
         if self.cols < MIN_COLS or self.rows < MIN_ROWS:
             frame = Frame(self.cols, self.rows)
-            frame.text(max(0, (self.cols - 33) // 2), self.rows // 2, "Aumente o terminal (minimo 36x28)", FOOTER_FG, None)
+            text = "Aumente o terminal (mínimo 36x28)"
+            frame.text(max(0, (self.cols - len(text)) // 2), self.rows // 2, text, FOOTER_FG, None)
             return frame
         canvas = self._background()
         labels = []
         for index, key in enumerate(self.visible_keys()):
             panel = self.plan.panels[index]
             door = self._door_of(key)
+            selected = self.show_selection and key == self.selected_key
             if door is None:
-                labels.append((index, "Voltar ao escritorio", self.place, key))
+                labels.append((index, "Voltar ao escritório", self.place, key))
+                if selected:
+                    hallart.draw_roller_selection(canvas, panel)
                 continue
             hallart.draw_lamp(canvas, panel, status_of(door), self.tick)
             self._draw_interior(canvas, panel, door)
+            if selected:
+                hallart.draw_door_selection(canvas, panel)
             extra = len(door.workers) - 2
             where = clean(door.workers[0].cwd.rstrip("/").rsplit("/", 1)[-1]) + ": " if self.warehouse else ""
             labels.append((index, door.title, where + summary_of(door) + (f" (+{extra})" if extra > 0 else ""), key))
         if self.plan.table is not None:
             hallart.draw_table(canvas, *self.plan.table, self.tick, self.selected_key == WAREHOUSE)
             self._draw_visitors(canvas)
+            if self.show_selection and self.selected_key == WAREHOUSE:
+                tx, ty = self.plan.table
+                hallart.frame_ring(canvas, tx + 2, ty + 7, 10, 8)
         frame = Frame.from_canvas(canvas, self.cols, self.rows)
         for index, title, summary, key in labels:
             self._label(frame, index, title, summary, key == self.selected_key)
@@ -283,7 +299,7 @@ class Hall:
             label_x, label_y = self._warehouse_label_at()
             frame.text(label_x, max(0, label_y), WAREHOUSE_LABEL, (28, 24, 40) if selected else INK, MARK if selected else CREAM, selected)
         if not self.doors:
-            text = " Nenhuma sessao neste diretorio: veja todas as sessões "
+            text = " Nenhuma sessão neste diretório: veja todas as sessões "
             frame.text((self.cols - len(text)) // 2, self.rows - 3 - self.covered_rows, text, INK, CREAM, True)
         self._footer(frame)
         return frame
@@ -309,9 +325,12 @@ class Hall:
                 props.draw_icon(canvas, hx + (0 if actor.hall_flip else 15), hy + 6 - (self.tick // 4) % 2, "steam")
 
     def _footer(self, frame: Frame) -> None:
-        where = "Todas as sessões" if self.warehouse else f"Escritorio: {self.place}"
+        where = "Todas as sessões" if self.warehouse else f"Escritório: {self.place}"
         back = "Esc volta" if self.warehouse else "w todas as sessões"
-        text = f" {where}  |  Setas selecionam  Roda rola  Enter/clique entra  {back}  q sai  pagina {self.page() + 1}/{self.pages()}"
+        page = f"  página {self.page() + 1}/{self.pages()}"
+        text = f" {where}  |  Mouse ou setas selecionam  Roda rola  Enter/clique entra  {back}  q sai"
+        # the page indicator always stays visible: the hints on the left are clipped to make room for it
+        text = text[:max(0, self.cols - len(page))] + page
         if self.tick < self.notice_until:
             text = f" {self.notice}"
         frame.text(0, self.rows - 1, text.ljust(self.cols)[:self.cols], FOOTER_FG, FOOTER_BG)

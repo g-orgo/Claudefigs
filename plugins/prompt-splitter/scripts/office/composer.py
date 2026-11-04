@@ -38,6 +38,7 @@ class Composer:
     def __init__(self):
         self.text = ""
         self.focused = False
+        self.hovered = False  # the pointer is over the box; hover never gives focus.
 
     def focus(self) -> None:
         self.focused = True
@@ -81,12 +82,14 @@ def _rounded(canvas: Canvas, x: int, y: int, width: int, height: int, color, cut
 
 
 @lru_cache(maxsize=8)
-def _box(width: int, rows: int, focused: bool) -> Canvas:
-    """The empty box; `None` pixels keep whatever the view has behind them, so the corners stay round."""
+def _box(width: int, rows: int, focused: bool, lit: bool) -> Canvas:
+    """The empty box; `None` pixels keep whatever the view has behind them, so the corners stay round.
+    `lit` (focused or hovered) turns the two outer rings white."""
     canvas = Canvas(width, rows * 2, None)
     top = PLATE_ROWS * 2
     height = rows * 2 - top
-    colors = (OUTLINE, WOOD_FOCUSED if focused else WOOD, GOLD_FOCUSED if focused else GOLD, PARCHMENT)
+    outer = WHITE if lit else OUTLINE
+    colors = (outer, WHITE if lit else (WOOD_FOCUSED if focused else WOOD), GOLD_FOCUSED if focused else GOLD, PARCHMENT)
     for (inset, cuts), color in zip(RINGS, colors):
         _rounded(canvas, inset, top + inset, width - 2 * inset, height - 2 * inset, color, cuts)
     for x in range(BORDER_PX + 1, width - BORDER_PX - 1):
@@ -124,11 +127,47 @@ def overlay(frame: Frame, canvas: Canvas, col: int, top: int) -> None:
             line[x] = (" ", None, a, False) if a == b else ("▀", a, b, False)
 
 
+BACK_W = 16  # cols of the back button.
+BACK_H = 8  # rows of the back button: 16 half-cell pixels tall.
+WHITE = (255, 255, 255)
+ARROW = (  # 8x8 left arrow in INK_BROWN, drawn at the center of the button.
+    "...#....",
+    "..##....",
+    ".###....",
+    "########",
+    "########",
+    ".###....",
+    "..##....",
+    "...#....",
+)
+
+
+@lru_cache(maxsize=2)
+def _back_canvas(selected: bool) -> Canvas:
+    """The back button: the box's rounded rings and colors, with the outer two rings white when selected."""
+    canvas = Canvas(BACK_W, BACK_H * 2, None)
+    height = BACK_H * 2
+    outer = WHITE if selected else OUTLINE
+    colors = (outer, WHITE if selected else WOOD, GOLD, PARCHMENT)
+    for (inset, cuts), color in zip(RINGS, colors):
+        _rounded(canvas, inset, inset, BACK_W - 2 * inset, height - 2 * inset, color, cuts)
+    for y, line in enumerate(ARROW):
+        for x, ch in enumerate(line):
+            if ch == "#":
+                canvas.put(4 + x, 4 + y, INK_BROWN)
+    return canvas
+
+
+def draw_back_button(frame: Frame, col: int, top: int, selected: bool) -> None:
+    """Draws the round back button with its top-left cell at (col, top)."""
+    overlay(frame, _back_canvas(selected), col, top)
+
+
 def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, composer: "Composer", destination: str, hints: tuple[str, ...], tick: int) -> None:
     """Draws the box in the `rows` rows from (`col`, `top`), over whatever the view drew there."""
     if width < 24:
         return
-    canvas = _box(width, rows, composer.focused).copy()
+    canvas = _box(width, rows, composer.focused, composer.focused or composer.hovered).copy()
     inner = width - 2 * PAD_CELLS
     span = width - 2 * (BORDER_PX + 1)
     wanted = min(_plate_width(destination), DESTINATION_MIN)

@@ -3,12 +3,12 @@ import re
 from functools import lru_cache
 
 from .model import Worker
-from .term import Frame, char_width
+from .term import WHITE, Frame, char_width
 
 CREAM = (255, 253, 245)
 INK = (50, 44, 70)
 TOOL = (112, 112, 134)
-ROLES = {"voce": ("Voce", (0, 128, 140)), "claude": ("Claude", (160, 60, 170))}
+ROLES = {"voce": ("Você", (0, 128, 140)), "claude": ("Claude", (160, 60, 170))}
 STATE_COLORS = {
     "working": (24, 136, 78), "thinking": (24, 136, 78), "waiting": (200, 110, 0), "ask": (190, 120, 0),
     "blocked": (190, 120, 0), "failed": (205, 50, 60), "done": (112, 112, 134),
@@ -110,12 +110,12 @@ def body_rows(worker: Worker, workers: list[Worker], width: int, height: int, no
 
 
 def draw_bubble(frame: Frame, col: int, row: int, width: int, height: int, worker: Worker, workers: list[Worker],
-                color: tuple, selected: bool, tail_col: int, note: str = "", offset: int = 0) -> None:
+                color: tuple, tail_col: int, note: str = "", offset: int = 0) -> None:
     dark = tuple(int(c * 0.6) for c in color)
-    left, right, low_l, low_r, bar, side = ("╔", "╗", "╚", "╝", "═", "║") if selected else ("╭", "╮", "╰", "╯", "─", "│")
+    left, right, low_l, low_r, bar, side = "╭", "╮", "╰", "╯", "─", "│"
     inner = width - 2
     title = clip(f" {worker.item_label} {clean(worker.title)} ", inner)
-    frame.text(col, row, left + title + " " * (inner - width_of(title)) + right, (28, 24, 40), color, selected)
+    frame.text(col, row, left + title + " " * (inner - width_of(title)) + right, (28, 24, 40), color, False)
     rows = body_rows(worker, workers, inner - 2, height - 2, note, offset)
     blank = height - 2 - len(rows)
     for i in range(height - 2):
@@ -128,3 +128,23 @@ def draw_bubble(frame: Frame, col: int, row: int, width: int, height: int, worke
     frame.text(col, row + height - 1, low_l + bar * inner + low_r, dark, CREAM)
     if col < tail_col < col + width - 1:
         frame.text(tail_col, row + height - 1, "▼", dark, CREAM)
+
+
+def draw_selection(frame: Frame, col: int, row: int, width: int, height: int, tail_col: int, color: tuple) -> None:
+    """The white ring of the selected bubble: solid white end columns, bottom row and a half-block row above the title."""
+    dark = tuple(int(c * 0.6) for c in color)
+    if row > 0:
+        for c in range(col, col + width):
+            _, fg, bg, _ = frame.cells[row - 1][c]
+            upper = fg if frame.cells[row - 1][c][0] == "▀" else bg
+            frame.text(c, row - 1, "▄", WHITE, upper)
+    for r in range(row, row + height):
+        frame.text(col, r, " ", None, WHITE)
+        frame.text(col + width - 1, r, " ", None, WHITE)
+        if r > row:  # a dark line on the inner edge, so the white does not melt into the cream body.
+            frame.text(col + 1, r, "▏", dark, CREAM)
+            frame.text(col + width - 2, r, "▕", dark, CREAM)
+    for c in range(col, col + width):
+        frame.text(c, row + height - 1, "▔" if col < c < col + width - 1 else " ", dark, WHITE)
+    if col < tail_col < col + width - 1:
+        frame.text(tail_col, row + height - 1, "▼", dark, WHITE)

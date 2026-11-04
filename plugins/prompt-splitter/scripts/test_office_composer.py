@@ -119,6 +119,26 @@ class DrawTests(unittest.TestCase):
         self.assertEqual(frame.cells, plain.cells)
 
 
+class BackButtonTests(unittest.TestCase):
+    def test_corners_are_transparent_and_selected_outer_rings_are_white(self):
+        canvas = composer_mod._back_canvas(True)
+        self.assertIsNone(canvas.rows[0][0])
+        self.assertEqual(canvas.rows[8][0], composer_mod.WHITE)
+        self.assertEqual(canvas.rows[2][1], composer_mod.WHITE)
+        self.assertEqual(composer_mod._back_canvas(False).rows[8][0], composer_mod.OUTLINE)
+
+    def test_arrow_is_drawn_in_ink_brown_at_the_center(self):
+        canvas = composer_mod._back_canvas(False)
+        self.assertEqual(canvas.rows[8][4], composer_mod.INK_BROWN)
+        self.assertEqual(canvas.rows[8][11], composer_mod.INK_BROWN)
+
+    def test_draw_back_button_leaves_frame_size_alone(self):
+        from office.term import Frame
+        frame = Frame(40, 20)
+        composer_mod.draw_back_button(frame, 2, 3, True)
+        self.assertEqual(len(frame.cells), 20)
+
+
 class PixelFontTests(unittest.TestCase):
     def test_portuguese_letters_differ_from_their_base(self):
         for accented, base in zip("áàâãéêíóôõúçÁÉÃÇ", "aaaaeeiooouc" + "AEAC"):

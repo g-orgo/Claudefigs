@@ -1,11 +1,13 @@
 """Art of the hall and the warehouse: office fronts with glass, the roller door, the break corner and the crates."""
 from .props import OUTLINE, fill_poly
 from .sprites import Canvas, Color
+from .term import WHITE
 
 BAY_W, BAY_H, DEPTH = 58, 34, 6
 CAP = 3  # roof strip of a free-standing office.
 PADDING = 8  # spare interior rows, so an angled window never reads outside the room.
 DOOR = (3, 7, 14, BAY_H - 8)  # column, row, width, height inside the front wall.
+ROLLER = (6, 6, BAY_W - 12, BAY_H - 7)  # column, row, width, height of the warehouse roller door.
 WINDOW = (20, 4, BAY_W - 23, BAY_H - 10)
 WALLS = ((226, 214, 190), (206, 222, 214), (222, 208, 224), (214, 218, 234), (232, 214, 200), (210, 224, 196))
 WOOD, WOOD_D = (176, 122, 84), (138, 92, 62)
@@ -114,13 +116,39 @@ def draw_lamp(canvas: Canvas, panel, status: str, tick: int) -> None:
 def draw_roller_front(canvas: Canvas, x: int, y: int, back: bool) -> None:
     """The warehouse's roller door; back marks the one that returns to the office, which is wooden."""
     draw_shell(canvas, x, y, (190, 196, 206) if not back else (226, 214, 190))
-    rx, ry, rw, rh = 6, 6, BAY_W - 12, BAY_H - 7
+    rx, ry, rw, rh = ROLLER
     box(canvas, x + rx, y + ry, rw, rh, (128, 138, 156) if not back else WOOD)
     for j in range(2, rh - 1, 3):
         rect(canvas, x + rx + 1, y + ry + j, rw - 2, 1, (98, 106, 124) if not back else WOOD_D)
     stripe = (250, 200, 60)
     for i in range(0, rw, 4):
         rect(canvas, x + rx + i, y + ry + rh - 2, 2, 1, stripe)
+
+
+def frame_ring(canvas: Canvas, x: int, y: int, w: int, h: int) -> None:
+    """A white ring 2 pixels thick just outside a flat rectangle."""
+    rect(canvas, x - 2, y - 2, w + 4, 2, WHITE)
+    rect(canvas, x - 2, y + h, w + 4, 2, WHITE)
+    rect(canvas, x - 2, y, 2, h, WHITE)
+    rect(canvas, x + w, y, 2, h, WHITE)
+
+
+def draw_roller_selection(canvas: Canvas, panel) -> None:
+    """The ring around the warehouse's back roller door, which is flat."""
+    rx, ry, rw, rh = ROLLER
+    frame_ring(canvas, panel.x + rx, panel.y + ry, rw, rh)
+
+
+def draw_door_selection(canvas: Canvas, panel) -> None:
+    """The ring around an office door, following the wall's slope and the mirror, 2 pixels thick."""
+    dx, dy, dw, dh = DOOR
+    col = BAY_W - dx - dw if panel.mirror else dx
+    for c in range(col - 2, col + dw + 2):
+        top = panel.y + panel.shift(c) + dy
+        inside = col <= c < col + dw
+        rows = (top - 2, top - 1, top + dh, top + dh + 1) if inside else range(top - 2, top + dh + 2)
+        for r in rows:
+            canvas.put(panel.x + c, r, WHITE)
 
 
 def draw_table(canvas: Canvas, x: int, y: int, tick: int, selected: bool) -> None:

@@ -12,7 +12,8 @@ from office.model import Line, Worker
 from office.actors import SLOTS, resolve_target
 from office.bubble import body_rows, chat_geometry
 from office import rooms
-from office.office import BACK_LABEL, COPY_WORDING, Office
+from office.composer import BACK_H, BACK_W, INK_BROWN
+from office.office import BACK_GAP, COPY_WORDING, Office
 from office.scene import MIN_COLS, MIN_ROWS, Scene
 from office.sprites import Canvas
 from office.term import MOUSE_OFF, MOUSE_ON, Frame, Screen, char_width, diff
@@ -346,9 +347,10 @@ class OfficeBackAndSendTests(unittest.TestCase):
         office = self.office()
         for mode in ("room", "warehouse"):
             office.mode = mode
-            col, row, width = office.back_button()
+            col, row, width, height = office.back_button()
             left, top, _, rows = office.field_rect()
-            self.assertEqual(col + width + 1, left)
+            self.assertEqual((width, height), (BACK_W, BACK_H))
+            self.assertEqual(col + width + BACK_GAP, left)
             self.assertTrue(top < row < top + rows)
             self.assertFalse(office.in_composer(col, row))
         office.mode = "hall"
@@ -359,10 +361,10 @@ class OfficeBackAndSendTests(unittest.TestCase):
         office.set_workers([])
         hall_left = office.field_rect()[0]
         office.mode = "warehouse"
-        col, row, width = office.back_button()
+        col, row, width, _ = office.back_button()
         left, _, field, _ = office.field_rect()
         self.assertGreaterEqual(col, 0)
-        self.assertEqual(col + width + 1, left)
+        self.assertEqual(col + width + BACK_GAP, left)
         self.assertLessEqual(left + field, 60)
         self.assertLess(hall_left, left)
 
@@ -372,7 +374,16 @@ class OfficeBackAndSendTests(unittest.TestCase):
         office.mode = "room"
         self.assertEqual(office.back_button()[0:2], (1, 0))
         office.mode = "warehouse"
-        self.assertEqual(office.back_button()[0:2], ((200 - len(BACK_LABEL)) // 2, 0))
+        self.assertEqual(office.back_button()[0:2], ((200 - BACK_W) // 2, 0))
+
+    def test_hits_back_covers_the_whole_button_rectangle(self):
+        office = self.office()
+        office.mode = "room"
+        col, row, width, height = office.back_button()
+        for c, r in ((col, row), (col + width - 1, row), (col, row + height - 1), (col + width - 1, row + height - 1)):
+            self.assertTrue(office.hits_back(c, r))
+        for c, r in ((col - 1, row), (col + width, row), (col, row - 1), (col, row + height)):
+            self.assertFalse(office.hits_back(c, r))
 
     def test_fail_badge_has_the_done_badge_shape_and_a_coloured_rim(self):
         def outline(rows):
@@ -389,7 +400,7 @@ class OfficeBackAndSendTests(unittest.TestCase):
     def test_click_on_back_button_returns_from_room_without_opening_a_bubble(self):
         office = self.office()
         office.mode = "room"
-        col, row, _ = office.back_button()
+        col, row, _, _ = office.back_button()
         with mock.patch("claude_office.open_session") as opened:
             handle_key(office, f"\x1b[<0;{col + 1};{row + 1}M")
         opened.assert_not_called()
@@ -398,16 +409,18 @@ class OfficeBackAndSendTests(unittest.TestCase):
     def test_click_on_back_button_wins_over_a_bubble_under_it(self):
         office = self.office()
         office.mode = "room"
-        col, row, _ = office.back_button()
+        col, row, _, _ = office.back_button()
         with mock.patch("claude_office.open_session", side_effect=RuntimeError("must not open")) as opened:
             handle_key(office, f"\x1b[<0;{col + 1};{row + 1}M")
         opened.assert_not_called()
 
-    def test_back_label_is_drawn_on_the_button_row(self):
+    def test_back_button_is_drawn_with_the_arrow_color(self):
         office = self.office()
         office.mode = "room"
         frame = office.render()
-        self.assertIn(BACK_LABEL.strip(), row_text(frame, office.back_button()[1]))
+        col, row, width, height = office.back_button()
+        cells = [frame.cells[r][c] for r in range(row, row + height // 2) for c in range(col, col + width)]
+        self.assertTrue(any(INK_BROWN in (fg, bg) for _, fg, bg, _ in cells))
 
     def test_room_send_stops_attachable_done_worker_then_resumes(self):
         calls = []
@@ -719,3 +732,71 @@ class Phase2SceneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HoverSelectionTests(unittest.TestCase):
+    WHITE = (255, 255, 255)
+
+    def office(self) -> Office:
+        workers = [make_worker(0, lines=[Line("claude", f"linha {n}") for n in range(60)]), make_worker(1, lines=[Line("claude", f"linha {n}") for n in range(60)])]
+        office = Office(200, 60, sender=lambda argv, cwd: (0, ""))
+        office.set_workers(workers)
+        office.scene.set_workers(workers)
+        return office
+
+    def bubble_cell(self, scene: Scene, index: int) -> tuple[int, int]:
+        scene.render()
+        left, top, _, _ = scene._cells()[index]
+        return left + 2, top + 2
+
+    def test_motion_report_selects_a_bubble_and_a_door(self):
+        office = self.office()
+        office.mode = "room"
+        office.render()
+        col, row = self.bubble_cell(office.scene, 1)
+        handle_key(office, f"\x1b[<35;{col + 1};{row + 1}M")
+        self.assertEqual(office.scene.selected_id, office.scene.visible()[1].id)
+        office.mode = "hall"
+        hall = office.hall
+        target = next((c, r) for r in range(hall.rows) for c in range(hall.cols)
+                      if hall.key_at(c, r) not in (None, hall.selected_key))
+        key = hall.key_at(*target)
+        handle_key(office, f"\x1b[<35;{target[0] + 1};{target[1] + 1}M")
+        self.assertEqual(hall.selected_key, key)
+
+    def test_hover_over_the_composer_does_not_focus_it(self):
+        office = self.office()
+        office.mode = "room"
+        left, top, _, _ = office.field_rect()
+        handle_key(office, f"\x1b[<35;{left + 2};{top + 2}M")
+        self.assertTrue(office.composer.hovered)
+        self.assertFalse(office.composer.focused)
+
+    def test_hover_while_typing_keeps_selection_and_wheel_scrolls_the_bubble_under_the_pointer(self):
+        office = self.office()
+        office.mode = "room"
+        scene = office.scene
+        scene.render()
+        scene.selected_id = scene.visible()[0].id
+        office.composer.focus()
+        col, row = self.bubble_cell(scene, 1)
+        handle_key(office, f"\x1b[<35;{col + 1};{row + 1}M")
+        self.assertEqual(scene.selected_id, scene.visible()[0].id)
+        handle_key(office, f"\x1b[<64;{col + 1};{row + 1}M")
+        self.assertEqual(scene.selected_id, scene.visible()[0].id)
+        self.assertIn(scene.visible()[1].id, scene.chat_scroll)
+
+    def test_mouse_on_enables_motion_tracking(self):
+        self.assertIn("1003", MOUSE_ON)
+        self.assertIn("1003", MOUSE_OFF)
+
+    def test_show_selection_off_draws_no_white_ring(self):
+        def white_cells(show: bool) -> int:
+            scene = Scene(200, 60)
+            scene.set_workers([make_worker(0), make_worker(1)])
+            scene.selected_id = scene.visible()[0].id
+            scene.show_selection = show
+            frame = scene.render()
+            return sum(1 for line in frame.cells for cell in line if cell[2] == self.WHITE)
+        self.assertGreater(white_cells(True), 0)
+        self.assertLess(white_cells(False), white_cells(True))

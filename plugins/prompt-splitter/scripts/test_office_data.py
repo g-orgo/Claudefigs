@@ -168,10 +168,34 @@ class LinesAndLabels(Base):
                          "Estou rodando um comando para rodar os testes")
 
     def test_all_caps_or_digit_first_word_kept(self):
-        self.assertEqual(data.activity_label("Bash", {"description": "API 2 test"}),
-                         "Estou rodando um comando para API 2 test")
-        self.assertEqual(data.activity_label("Bash", {"description": "v1.2 release"}),
-                         "Estou rodando um comando para v1.2 release")
+        self.assertEqual(data.activity_label("Bash", {"description": "API 2 para testes"}),
+                         "Estou rodando um comando para API 2 para testes")
+        self.assertEqual(data.activity_label("Bash", {"description": "v1.2 da versão"}),
+                         "Estou rodando um comando para v1.2 da versão")
+
+    def test_english_descriptions_use_fallback(self):
+        for text in ("compare process bonus; check output multipliers and doc formats",
+                     "check headless client and gem sell perks", "write docs and", "filter the results"):
+            self.assertEqual(data.activity_label("Bash", {"description": text}),
+                             "Estou rodando um comando no terminal")
+            self.assertEqual(data.activity_label("Agent", {"description": text}),
+                             "Estou delegando a um subagent")
+
+    def test_portuguese_descriptions_kept(self):
+        self.assertEqual(data.activity_label("Bash", {"description": "listar arquivos do projeto"}),
+                         "Estou rodando um comando para listar arquivos do projeto")
+        self.assertEqual(data.activity_label("Bash", {"description": "rodar os testes"}),
+                         "Estou rodando um comando para rodar os testes")
+        self.assertEqual(data.activity_label("Bash", {"description": "Compilar módulo"}),
+                         "Estou rodando um comando para compilar módulo")
+
+    def test_websearch_english_query_uses_fallback(self):
+        self.assertEqual(data.activity_label("WebSearch", {"query": "best redis clients for python"}),
+                         "Estou pesquisando na web")
+        self.assertEqual(data.activity_label("WebSearch", {"query": "Clientes Redis em Python"}),
+                         "Estou pesquisando na web sobre Clientes Redis em Python")
+        self.assertEqual(data.activity_label("WebSearch", {"query": "Melhores clientes Redis"}),
+                         "Estou pesquisando na web")
 
     def test_read_write_edit_notebook_use_basename(self):
         self.assertEqual(data.activity_label("Read", {"file_path": "/x/api.md"}), "Estou lendo o arquivo api.md")
@@ -187,8 +211,8 @@ class LinesAndLabels(Base):
                          'Estou procurando "def parse" no código')
         self.assertEqual(data.activity_label("Glob", {"pattern": "**/*.py"}),
                          "Estou procurando arquivos com **/*.py")
-        self.assertEqual(data.activity_label("WebSearch", {"query": "cache redis"}),
-                         "Estou pesquisando na web sobre cache redis")
+        self.assertEqual(data.activity_label("WebSearch", {"query": "cache redis para sessões"}),
+                         "Estou pesquisando na web sobre cache redis para sessões")
 
     def test_delegate_skill_and_fixed_phrases(self):
         self.assertEqual(data.activity_label("Agent", {"description": "Pesquisar bibliotecas"}),

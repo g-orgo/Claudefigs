@@ -18,12 +18,14 @@ EVENTS = {"session": "SessionStart", "subagent": "SubagentStart", "prompt": "Use
 USER_RULES_LIMIT = 8
 CLI = f'python3 "{ROOT}/scripts/store.py"'
 
-ASK = """bom-senso: this prompt may be a correction (signal: "{signal}"). If the user is correcting something the agent got wrong, skipped or should have noticed unprompted, call AskUserQuestion once, in pt-BR, before any other step (including a split), then carry on with the work. If it is a new request, or the same situation was already asked in this session, ignore this note silently. If AskUserQuestion is unavailable, skip it.
+ASK = """bom-senso: suggestion to add an example, this prompt may be a correction (signal: "{signal}"). If the user is correcting something the agent got wrong, skipped or should have noticed unprompted, call AskUserQuestion once, in pt-BR, before any other step (including a split), then carry on with the work. If it is a new request, or the same situation was already asked in this session, ignore this note silently. If AskUserQuestion is unavailable, skip it.
 Question: one line naming the situation, asking whether to record it as a Bom senso example. Header: "Bom senso". Options:
 - "Registrar": record it; every example applies to every project.
 - "Nao registrar": this one is not a lapse of common sense.
 - "Nao perguntar mais": silence this for the session.
 On the first, follow the bom-senso `registrar` skill. On the last, run: {cli} mute {session_id}"""
+
+RECORD = """bom-senso: the user named a lapse of common sense in this prompt. Do not ask about it: follow the bom-senso `registrar` skill right away, before any other step (including a split), then carry on with the work. Only skip it if the prompt merely talks about the Bom senso plugin itself, or the same situation was already recorded in this session."""
 
 
 def checklist(name):
@@ -51,9 +53,13 @@ def context_for(event, data):
     related = detect.related_examples(prompt, examples)
     if related:
         parts.append(rules_block("bom-senso, related past lapses:", related).strip())
+    if os.environ.get("CLAUDE_SPLIT_CHILD") == "1":
+        return "\n".join(parts)
     signal = detect.correction_signal(prompt)
     session_id = data.get("session_id") or ""
-    if signal and os.environ.get("CLAUDE_SPLIT_CHILD") != "1" and not store.is_muted(session_id):
+    if detect.mentions_bom_senso(prompt):
+        parts.append(RECORD)
+    elif signal and not store.is_muted(session_id):
         parts.append(ASK.format(signal=signal, cli=CLI, session_id=session_id))
     return "\n".join(parts)
 

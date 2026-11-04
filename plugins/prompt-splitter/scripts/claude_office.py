@@ -27,6 +27,7 @@ ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?)?")
 PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*)?")
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 LEFT_BUTTON, WHEEL_UP, WHEEL_DOWN = 0, 64, 65
+MOTION = 32
 PASTE_START, PASTE_END = "\x1b[200~", "\x1b[201~"
 
 
@@ -97,6 +98,11 @@ def handle_key(scene, key: str) -> None:
     mouse = parse_mouse(key)
     if mouse is not None:
         button, col, row, pressed = mouse
+        hover = getattr(scene, "hover", None)
+        if button & MOTION:  # bit 32: the pointer moved, with or without a button.
+            if hover is not None:
+                hover(col, row)
+            return
         if not pressed:
             return
         if button == LEFT_BUTTON and composer is not None:
@@ -108,10 +114,10 @@ def handle_key(scene, key: str) -> None:
         if button == LEFT_BUTTON and hits_back is not None and hits_back(col, row):
             scene.back()  # the Voltar button wins over whatever is drawn under it.
             return
-        if button == WHEEL_UP:
-            scene.scroll(-1)
-        elif button == WHEEL_DOWN:
-            scene.scroll(1)
+        if button in (WHEEL_UP, WHEEL_DOWN):
+            if hover is not None:
+                hover(col, row)  # terminals without motion reports still scroll what is under the pointer.
+            scene.scroll(-1 if button == WHEEL_UP else 1)
         elif button == LEFT_BUTTON:
             worker = scene.click(col, row)
             if worker is not None:

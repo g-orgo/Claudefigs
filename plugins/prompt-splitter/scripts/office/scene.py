@@ -1,7 +1,7 @@
 """The office scene: one walled room per split group, paged by whole rooms, drawn to a terminal frame."""
 from . import props, rooms, sprites
 from .actors import SLOTS, Actor, resolve_target
-from .bubble import CREAM, INK, chat_geometry, draw_bubble
+from .bubble import CREAM, INK, chat_geometry, draw_bubble, draw_selection
 from .model import Worker
 from .paths import Grid, desk_blocks
 from .term import Frame
@@ -13,7 +13,7 @@ NOTICE_TICKS = 24
 BACKGROUND_CACHE = 32
 WHEEL_ROWS = 3  # chat rows per wheel notch
 CONTROLS = [
-    "Setas: esquerda/direita selecionam, cima/baixo e roda rolam o chat  Enter/clique abre  Esc volta  q sai",
+    "Mouse ou esquerda/direita selecionam, cima/baixo e roda rolam o chat  Enter/clique abre  Esc volta  q sai",
     "Setas selecionam, cima/baixo e roda rolam o chat  Enter abre  Esc volta  q sai",
     "Setas e roda rolam  Enter abre  Esc volta  q sai",
 ]
@@ -26,6 +26,7 @@ class Scene:
         self.pages: list[list[rooms.Room]] = []
         self.actors: dict[str, Actor] = {}
         self.selected_id: str | None = None
+        self.show_selection = True  # False while the composer or Voltar has the pointer or focus.
         self._page = 0  # stored page, clamped to pages() on read.
         self.chat_scroll: dict[str, int] = {}  # rows back from the newest, per worker id; absent means 0.
         self._chat_seen: dict[str, int] = {}  # chat row count last seen per worker id, to follow new lines.
@@ -70,17 +71,17 @@ class Scene:
             self.selected_id = ids[max(0, min(len(ids) - 1, ids.index(self.selected_id) + delta))]
             self.reveal()
 
-    def scroll(self, delta: int) -> None:
-        """Wheel: one notch moves the selected chat by WHEEL_ROWS; negative is older. Pages do not turn."""
-        self.chat(-delta * WHEEL_ROWS)
+    def scroll(self, delta: int, worker: Worker | None = None) -> None:
+        """Wheel: one notch moves the given chat (default: the selected one) by WHEEL_ROWS; negative is older. Pages do not turn."""
+        self.chat(-delta * WHEEL_ROWS, worker)
 
     def _cell_of(self, worker: Worker) -> tuple[int, int] | None:
         """The bubble width and height of a worker on the displayed page, if it is shown."""
         return next(((cell[2], cell[3]) for w, cell in zip(self.visible(), self._cells()) if w.id == worker.id), None)
 
-    def chat(self, rows: int) -> None:
-        """Moves the selected chat by `rows`: positive is older, negative is newer. Clamped at both ends."""
-        worker = self.selected()
+    def chat(self, rows: int, worker: Worker | None = None) -> None:
+        """Moves the chat of `worker` (default: the selected one) by `rows`: positive is older, negative is newer. Clamped at both ends."""
+        worker = self.selected() if worker is None else worker
         size = self._cell_of(worker) if worker is not None else None
         if size is None:
             return
@@ -155,6 +156,12 @@ class Scene:
         if worker is not None:
             self.selected_id = worker.id
         return worker
+
+    def hover(self, col: int, row: int) -> None:
+        """Mouse motion: a bubble under the pointer becomes the selected one; anything else keeps the selection."""
+        worker = self.worker_at(col, row)
+        if worker is not None:
+            self.selected_id = worker.id
 
     def press(self) -> Worker | None:
         """Enter: when the selected worker is off the displayed page, only brings the page back."""
@@ -263,7 +270,7 @@ class Scene:
     def render(self) -> Frame:
         if self.cols < MIN_COLS or self.rows < MIN_ROWS:
             frame = Frame(self.cols, self.rows)
-            text = "Aumente o terminal (minimo 36x28)"
+            text = "Aumente o terminal (mínimo 36x28)"
             frame.text(max(0, (self.cols - len(text)) // 2), self.rows // 2, text, (225, 228, 240), None)
             return frame
         actors, cells = self._sync()
@@ -278,15 +285,20 @@ class Scene:
         for room in page_rooms:
             frame.text(room.sign_col, room.row, room.sign, INK, CREAM, True)
         positions = {w.id: i for i, w in enumerate(self.workers)}
+        ring = None  # the selected bubble's ring, drawn after every bubble so nothing covers it.
         for actor, (col, top, width, height) in zip(actors, cells):
             worker = actor.worker
             color = RAINBOW[positions[worker.id] % len(RAINBOW)]
             tail = actor.desk[0] + props.SEAT_DX + 8
             offset = self._chat_offset(worker, width, height)
-            draw_bubble(frame, col, top, width, height, worker, self.workers, color, worker.id == self.selected_id, tail, actor.note(), offset)
+            draw_bubble(frame, col, top, width, height, worker, self.workers, color, tail, actor.note(), offset)
+            if worker.id == self.selected_id:
+                ring = (col, top, width, height, tail, color)
             if not actor.seated and not actor.away:
                 hx, hy = actor.head()
                 frame.text(hx + 5, hy // 2 - 1, f" {worker.item_label} ", (28, 24, 40), color, True)
+        if ring is not None and self.show_selection:
+            draw_selection(frame, *ring)
         if not self.workers:
             text = " Nenhum split recente "
             frame.text((self.cols - len(text)) // 2, self.rows // 2, text, INK, CREAM, True)
@@ -297,7 +309,7 @@ class Scene:
         count = lambda *states: sum(w.state in states for w in self.workers)
         pages = max(1, len(self.pages))
         stats = f" {count('working', 'thinking')} rodando  {count('waiting', 'ask', 'blocked')} aguardando  {count('done')} concluidas  {count('failed')} falhas  |  "
-        tail = f"  pagina {self.page() + 1}/{pages}"
+        tail = f"  página {self.page() + 1}/{pages}"
         text = next((stats + option + tail for option in CONTROLS if len(stats + option + tail) <= self.cols), stats + CONTROLS[-1] + tail)
         if self.tick < self.notice_until:
             text = f" {self.notice}"

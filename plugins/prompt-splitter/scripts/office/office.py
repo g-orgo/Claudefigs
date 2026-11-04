@@ -10,8 +10,8 @@ import threading
 import time
 
 from . import hallart, life, props, sprites
-from .bubble import INK, clean
-from .composer import MIN_ROWS, Composer, draw_composer, field_geometry, panel_rows
+from .bubble import clean
+from .composer import BACK_H, BACK_W, MIN_ROWS, Composer, draw_back_button, draw_composer, field_geometry, panel_rows
 from .data import full_session_id
 from .hall import BACK, WAREHOUSE, Hall, doors_of
 from .hallart import BAY_W
@@ -26,8 +26,7 @@ FLOOR_GAP = 2  # rows of floor kept between the box and the footer in the wide h
 EXTRA_FLOOR_MARGIN = 1  # rows of floor above and below the box where the floor is extended for it.
 ROOM_BUSY = ("working", "thinking")
 COPY_WORDING = re.compile(r"(?i)\b(copy|c[oó]pia|started a copy)\b")
-BACK_LABEL, BACK_FILL = " < Voltar ", (232, 178, 92)  # the bubble look: wood gold, ink text
-BACK_GAP = 1  # cells between the Voltar button and the box.
+BACK_GAP = 1  # cells between the back button and the box.
 BOX_TOP_ROWS = 2  # rows of name plate above the box's body; the button centers on the body.
 MIN_BOX_WIDTH = 24  # draw_composer draws nothing narrower than this.
 
@@ -49,6 +48,8 @@ class Office:
         self.hall = Hall(cols, self._hall_rows(), False, self.place)
         self.warehouse = Hall(cols, view_rows, True, self.place)
         self.mode = "hall"
+        self.back_hovered = False
+        self.pointer: tuple[int, int] | None = None  # last mouse cell, for the wheel over a bubble while typing.
         self.door_key: str | None = None
         self.came_from = "hall"
         self.workers: list[Worker] = []
@@ -90,7 +91,7 @@ class Office:
                 left = max(panel.x + BAY_W for panel in free if panel.x < self.cols // 2)
                 room = min(panel.x for panel in free if panel.x >= self.cols // 2) - left - 4
         width, col = field_geometry(self.cols, room)
-        side = len(BACK_LABEL) + BACK_GAP + 1
+        side = BACK_W + BACK_GAP + 1
         if self.mode != "hall" and col < side:  # no free floor at the left: the box gives way to the button.
             col, width = side, self.cols - side - 2
         return col, top, width, rows
@@ -152,6 +153,7 @@ class Office:
             self.view().step()
 
     def render(self) -> Frame:
+        self.view().show_selection = not (self.composer.focused or self.composer.hovered or self.back_hovered)
         frame = self.view().render()
         if self.composer_shown():
             if frame.nrows < self.rows:
@@ -161,8 +163,8 @@ class Office:
             draw_composer(frame, top, col, width, rows, self.composer, self._destination(), hints, self.tick)
         button = self.back_button()
         if button is not None:
-            col, row, _ = button
-            frame.text(col, row, BACK_LABEL, INK, BACK_FILL, True)
+            col, row, _, _ = button
+            draw_back_button(frame, col, row, self.back_hovered)
         return frame
 
     def _with_strip(self, view: Frame) -> Frame:
@@ -184,24 +186,25 @@ class Office:
             self._floor = (key, Frame.from_canvas(canvas, self.cols, self.rows).cells)
         return self._floor[1]
 
-    def back_button(self) -> tuple[int, int, int] | None:
-        """Where the Voltar button sits as (col, row, width): left of the box; None in the hall.
+    def back_button(self) -> tuple[int, int, int, int] | None:
+        """Where the back button sits as (col, row, width, height): left of the box, vertically centered on its body; None in the hall.
 
-        Without a box to sit beside it falls back to the top: room at the left, warehouse centered."""
-        width = len(BACK_LABEL)
+        Without a box to sit beside it falls back to the top: room at the left, warehouse centered.
+        The row is clipped so the whole button stays on screen."""
         if self.mode != "hall" and self.composer_shown():
             col, top, field, rows = self.field_rect()
             if field >= MIN_BOX_WIDTH:
-                return (col - width - BACK_GAP, top + BOX_TOP_ROWS + (rows - BOX_TOP_ROWS) // 2, width)
+                row = top + BOX_TOP_ROWS + (rows - BOX_TOP_ROWS - BACK_H) // 2
+                return (max(0, col - BACK_W - BACK_GAP), max(0, min(row, self.rows - BACK_H)), BACK_W, BACK_H)
         if self.mode == "room":
-            return (1, 0, width)
+            return (1, 0, BACK_W, BACK_H)
         if self.mode == "warehouse":
-            return (max(0, (self.cols - width) // 2), 0, width)
+            return (max(0, (self.cols - BACK_W) // 2), 0, BACK_W, BACK_H)
         return None
 
     def hits_back(self, col: int, row: int) -> bool:
         button = self.back_button()
-        return button is not None and row == button[1] and button[0] <= col < button[0] + button[2]
+        return button is not None and button[0] <= col < button[0] + button[2] and button[1] <= row < button[1] + button[3]
 
     def arrows_scroll(self) -> bool:
         """In a room, Up and Down page the selected chat instead of selecting."""
@@ -348,7 +351,21 @@ class Office:
             self._go(key)
         return None
 
+    def hover(self, col: int, row: int) -> None:
+        """Mouse motion: moves the selection to what is under the pointer, unless a draft or the Voltar button holds it."""
+        self.pointer = (col, row)
+        self.composer.hovered = self.in_composer(col, row)
+        self.back_hovered = self.hits_back(col, row)
+        if self.composer.focused or self.composer.hovered or self.back_hovered:
+            return  # in a room the composer's destination is the selected worker, so a draft must not change it.
+        self.view().hover(col, row)
+
     def scroll(self, delta: int) -> None:
+        if self.mode == "room" and self.composer.focused and self.pointer is not None:
+            worker = self.scene.worker_at(*self.pointer)
+            if worker is not None:
+                self.scene.scroll(delta, worker)  # the bubble under the pointer, without changing the selection.
+                return
         self.view().scroll(delta)
 
     def press(self) -> Worker | None:

@@ -127,6 +127,18 @@ class HookTest(unittest.TestCase):
         self.assertNotIn("--project", text)
         self.assertNotIn("So neste projeto", text)
 
+    def test_explicit_mention_records_without_asking(self):
+        payload = {**self.payload, "prompt": "Isso foi falta de bom senso"}
+        text = context(run_hook("prompt", payload, self.tmp.name))
+        self.assertIn("registrar", text)
+        self.assertNotIn("AskUserQuestion", text)
+
+    def test_explicit_mention_records_even_when_muted(self):
+        subprocess.run([sys.executable, str(ROOT / "scripts/store.py"), "mute", "abc"],
+                       env={**os.environ, "CLAUDE_PLUGIN_DATA": self.tmp.name}, check=False)
+        payload = {**self.payload, "prompt": "Isso foi falta de bom senso"}
+        self.assertIn("registrar", context(run_hook("prompt", payload, self.tmp.name)))
+
     def test_split_child_is_not_asked(self):
         result = run_hook("prompt", self.payload, self.tmp.name, CLAUDE_SPLIT_CHILD="1")
         self.assertNotIn("AskUserQuestion", result.stdout)

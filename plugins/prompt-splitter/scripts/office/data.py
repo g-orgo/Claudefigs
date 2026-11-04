@@ -39,7 +39,7 @@ ACTIVITY = {
     "Write": ("Agora vou escrever o arquivo {value}", "file_path", "base", "Agora vou escrever arquivos"),
     "NotebookEdit": ("Agora vou modificar o notebook {value}", "notebook_path", "base", "Agora vou modificar um notebook"),
     "Agent": ("Estou delegando a um subagent: {value}", "description", "desc", "Estou delegando a um subagent"),
-    "WebSearch": ("Estou pesquisando na web sobre {value}", "query", "clip", "Estou pesquisando na web"),
+    "WebSearch": ("Estou pesquisando na web sobre {value}", "query", "text", "Estou pesquisando na web"),
     "WebFetch": ("Estou consultando a página {value}", "url", "host", "Estou consultando uma página da web"),
     "Skill": ("Estou usando a skill {value}", "skill", "clip", "Estou usando uma skill"),
 }
@@ -164,8 +164,35 @@ def _lower_first(text: str) -> str:
     return text[:1].lower() + text[1:]
 
 
+_ENGLISH_STOPWORDS = {"the", "and", "to", "of", "with", "from", "for", "in", "on"}
+_PT_WORDS = {"de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas", "para", "com",
+             "um", "uma", "os", "as", "ao", "que", "por"}
+_NOT_PT_INFINITIVE = {
+    "filter", "order", "clear", "enter", "render", "number", "cover", "register", "gather", "error",
+    "server", "user", "her", "over", "under", "after", "your", "their", "compiler", "docker", "container",
+    "parser", "tar", "jar", "star", "char", "car", "war", "air", "fair", "pair", "dir", "stir", "for", "or",
+}
+_ACCENTED = set("áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ")
+
+
+def looks_portuguese(text: str) -> bool:
+    """Heuristic: True when the text reads as pt-BR (accent, pt word or pt infinitive), False when it reads as English."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    if not words:
+        return False
+    has_accent = any(ch in _ACCENTED for ch in text)
+    if not has_accent and any(w in _ENGLISH_STOPWORDS for w in words):
+        return False
+    if has_accent or any(w in _PT_WORDS for w in words):
+        return True
+    first = words[0]
+    return (first.endswith(("ar", "er", "ir")) and len(first) > 3
+            and first not in _NOT_PT_INFINITIVE)
+
+
 def _shaped(value: str, how: str) -> str:
-    """The inserted value of a tool phrase: basename, host or lowered description, clipped."""
+    """The inserted value of a tool phrase: basename, host, or lowered description, clipped.
+    Free text ("desc", "text") that does not read as pt-BR gives "" so the tool's fallback is used."""
     if how == "base":
         value = os.path.basename(value)
     elif how == "host":
@@ -174,6 +201,8 @@ def _shaped(value: str, how: str) -> str:
         except ValueError:
             value = ""
     value = clip(value).strip()
+    if how in ("desc", "text") and value and not looks_portuguese(value):
+        return ""
     return _lower_first(value) if how == "desc" and value else value
 
 

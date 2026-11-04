@@ -6,11 +6,12 @@ import unicodedata
 
 from .sprites import Canvas, Color
 
-MOUSE_ON = "\x1b[?1000h\x1b[?1006h"  # button reports, in SGR coordinates
-MOUSE_OFF = "\x1b[?1006l\x1b[?1000l"
+MOUSE_ON = "\x1b[?1000h\x1b[?1003h\x1b[?1006h"  # button and motion reports, in SGR coordinates
+MOUSE_OFF = "\x1b[?1006l\x1b[?1003l\x1b[?1000l"
 
 Cell = tuple[str, Color | None, Color | None, bool]
 BLANK: Cell = (" ", None, None, False)
+WHITE = (255, 255, 255)  # the selection ring of doors, bubbles and the composer.
 
 
 def char_width(ch: str) -> int:

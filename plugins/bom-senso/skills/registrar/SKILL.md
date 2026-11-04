@@ -1,6 +1,6 @@
 ---
 name: registrar
-description: Record a situation as a Bom senso example. Use when the user chose to record one in the Bom senso question, or asks to save something as a common-sense example.
+description: Record a situation as a Bom senso example. Use when the user mentions a lapse of common sense (bom senso), chose to record one in the Bom senso question, or asks to save something as a common-sense example.
 ---
 
 Record the situation with the store CLI. All text goes in pt-BR, short and generic enough to apply again.

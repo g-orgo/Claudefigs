@@ -15,7 +15,7 @@ SIDE_MARGIN = 8  # columns kept free on each side of a room
 CORRIDOR = 4  # columns between rooms in a shelf
 CHAMFER = 12  # pixels of the rear wall corner cut into the floor
 PALETTES = 6  # number of room palettes
-NO_TITLE = "Sessao sem titulo"
+NO_TITLE = "Sessão sem título"
 MIN_TITLE = 12  # title columns kept before the meta is dropped
 
 
