@@ -1,4 +1,6 @@
 """Isometric furniture, room and small effect icons of the office viewer."""
+from dataclasses import dataclass
+
 from .sprites import Canvas, Color
 
 OUTLINE: Color = (46, 34, 58)
@@ -27,6 +29,64 @@ BADGE_RIMS = {  # (top shine, bottom shade) of the coloured rim on the round sta
 LEG_DROP = 6  # floor contact of a leg, below the desk corner it hangs from.
 
 
+SKIRT = 4  # height of the desk's side faces.
+
+
+@dataclass(frozen=True)
+class Kit:
+    """One furniture set: the desk's materials, the monitor model and what sits on the desk."""
+    name: str
+    top: Color
+    top_hi: Color
+    grain: Color
+    left: Color
+    right: Color
+    trim: Color
+    seam: Color
+    knob: Color
+    leg: Color
+    leg_hi: Color
+    chair: Color
+    chair_hi: Color
+    chair_lo: Color
+    monitor: str  # "flat" | "crt" | "wide" | "candy"
+    bezel: Color
+    case: Color
+    case_hi: Color
+    stand: Color
+    stand_hi: Color
+    neck: Color
+    keys: Color
+    key_cap: Color
+    key_gap: Color
+    rgb: bool
+    mat: Color | None
+    items: tuple  # (near the keyboard options, far corner, flat note or None)
+
+
+CLASSIC = Kit("classica", WOOD, (250, 216, 170), (214, 170, 120), WOOD_L, WOOD_R, (212, 164, 116), (136, 94, 64), (250, 214, 120),
+              METAL_D, METAL, (98, 112, 160), (130, 146, 196), (70, 82, 124), "flat", BEZEL, (84, 90, 112), (150, 158, 180),
+              METAL, (168, 176, 198), METAL_D, (226, 230, 240), (250, 252, 255), (150, 156, 176), False, None,
+              (("mug", "papers"), "plant", "note_yellow"))
+RETRO = Kit("retro", (168, 108, 70), (204, 146, 100), (140, 86, 54), (124, 76, 48), (100, 60, 38), (150, 96, 62), (72, 42, 28), (236, 200, 110),
+            (70, 54, 48), (108, 86, 74), (150, 74, 60), (190, 104, 84), (108, 50, 42), "crt", (214, 204, 176), (170, 160, 134), (232, 224, 200),
+            (200, 190, 162), (232, 224, 200), (150, 140, 116), (204, 194, 166), (236, 228, 204), (140, 130, 108), False, None,
+            (("floppies", "mug"), "banker", None))
+GAMER = Kit("gamer", (62, 66, 84), (92, 98, 124), (52, 56, 72), (44, 46, 62), (34, 36, 50), (80, 220, 232), (22, 24, 34), (255, 90, 170),
+            (30, 32, 44), (70, 74, 96), (52, 54, 74), (232, 70, 110), (34, 36, 50), "wide", (40, 42, 56), (28, 30, 42), (70, 74, 96),
+            (44, 46, 62), (120, 232, 240), (28, 30, 42), (30, 32, 44), (90, 96, 120), (18, 20, 28), True, None,
+            (("soda", "soda"), "headset", None))
+ATELIER = Kit("atelie", (244, 240, 232), (255, 255, 255), (226, 220, 210), (206, 216, 214), (176, 190, 190), (232, 234, 228), (130, 150, 150), (240, 130, 150),
+              (222, 150, 160), (246, 190, 196), (120, 200, 190), (170, 232, 220), (80, 160, 152), "candy", (96, 206, 200), (60, 160, 158), (150, 232, 224),
+              (244, 240, 232), (255, 255, 255), (180, 190, 190), (250, 226, 232), (255, 246, 248), (222, 150, 170), False, None,
+              (("pencils", "sketch"), "cactus", "note_pink"))
+STUDY = Kit("biblioteca", (122, 58, 48), (166, 92, 74), (98, 44, 38), (92, 42, 36), (72, 32, 30), (178, 140, 80), (50, 22, 20), (240, 206, 120),
+            (58, 34, 30), (96, 62, 50), (56, 110, 84), (92, 152, 118), (36, 78, 60), "flat", (64, 60, 66), (40, 38, 44), (98, 92, 100),
+            (178, 140, 80), (232, 200, 130), (120, 92, 50), (58, 54, 60), (116, 110, 116), (28, 26, 30), False, (60, 112, 86),
+            (("books", "inkwell"), "globe", None))
+KITS = [CLASSIC, RETRO, GAMER, ATELIER, STUDY]
+
+
 def fill_poly(canvas: Canvas, points: list[tuple[int, int]], color: Color, edge: Color | None = OUTLINE) -> None:
     """Scanline fill of a convex polygon, with an optional outline."""
     ys = [p[1] for p in points]
@@ -49,65 +109,107 @@ def fill_poly(canvas: Canvas, points: list[tuple[int, int]], color: Color, edge:
                 canvas.put(ax + (bx - ax) * t // steps, ay + (by - ay) * t // steps, edge)
 
 
-def draw_chair(canvas: Canvas, x: int, y: int, color: Color) -> None:
-    fill_poly(canvas, [(x + 21, y - 3), (x + 35, y - 3), (x + 36, y + 12), (x + 20, y + 12)], color)
+def _shade_area(canvas: Canvas, points: list[tuple[int, int]], factor: float = 0.82) -> None:
+    """Darkens what is already painted inside a convex polygon: the soft contact shadow of a furniture."""
+    ys = [p[1] for p in points]
+    for y in range(min(ys), max(ys) + 1):
+        xs = []
+        for (ax, ay), (bx, by) in zip(points, points[1:] + points[:1]):
+            if ay != by and min(ay, by) <= y <= max(ay, by):
+                xs.append(ax + (y - ay) * (bx - ax) // (by - ay))
+        if xs and 0 <= y < canvas.height:
+            for col in range(max(0, min(xs)), min(canvas.width, max(xs) + 1)):
+                r, g, b = canvas.rows[y][col]
+                canvas.rows[y][col] = (int(r * factor), int(g * factor), int(b * factor))
 
 
-def draw_desk(canvas: Canvas, x: int, y: int) -> None:
+def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
+    """Padded backrest with rounded top, seams and a shaded side."""
+    left, right, top, bottom = x + 20, x + 36, y - 4, y + 12
+    fill_poly(canvas, [(left + 2, top), (right - 2, top), (right, top + 2), (right, bottom), (left, bottom), (left, top + 2)], kit.chair)
+    for col in range(left + 2, right - 1):
+        canvas.put(col, top + 1, kit.chair_hi)
+    for row in range(top + 2, bottom):
+        canvas.put(left + 1, row, kit.chair_hi)
+        canvas.put(right - 1, row, kit.chair_lo)
+
+
+def _draw_desk_top(canvas: Canvas, x: int, y: int, kit: Kit, corners: tuple) -> None:
+    p0, p1, p2, p3 = corners
+    fill_poly(canvas, [p0, p1, p2, p3], kit.top)
+    for lane, phase in ((1, 0), (2, 5), (3, 2)):  # grain lanes along the long axis, broken so they read as wood.
+        bx, by = x + 3 * lane, y + 6 - lane * 3 // 2
+        for t in range(2, 26):
+            if (t * 3 + phase) % 11 < 7:
+                canvas.put(bx + t, by + t // 2, kit.grain)
+    for t in range(1, 27):  # bright rim along the edge closest to the camera.
+        canvas.put(p3[0] + 1 + t, p3[1] - 1 + (t + 1) // 2, kit.top_hi)
+    for t in range(1, 11):
+        canvas.put(p3[0] + 1 + t, p3[1] - t // 2, kit.top_hi)
+
+
+def draw_desk(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
     """A long desk along the down-right axis; the character sits behind its rear edge."""
     p0, p1, p2, p3 = (x + 12, y), (x + 40, y + 14), (x + 28, y + 20), (x, y + 6)
+    drop = LEG_DROP
+    _shade_area(canvas, [(p3[0] + 1, p3[1] + drop), (p2[0], p2[1] + drop + 1), (p1[0] - 1, p1[1] + drop), (p1[0] - 1, p1[1]), (p3[0] + 1, p3[1])])
     for lx, (_, ly) in ((p3[0] + 1, p3), (p2[0] - 1, p2), (p1[0] - 3, p1)):
         # Each leg starts inside the skirt, which is drawn over its top, so it can never float below the desk.
-        fill_poly(canvas, [(lx, ly + 1), (lx + 2, ly + 1), (lx + 2, ly + LEG_DROP), (lx, ly + LEG_DROP)], METAL_D, None)
-        for leg_y in range(ly + 1, ly + LEG_DROP + 1):
-            canvas.put(lx, leg_y, METAL)
-    fill_poly(canvas, [p3, p2, (p2[0], p2[1] + 3), (p3[0], p3[1] + 3)], WOOD_L)
-    fill_poly(canvas, [p2, p1, (p1[0], p1[1] + 3), (p2[0], p2[1] + 3)], WOOD_R)
-    fill_poly(canvas, [p0, p1, p2, p3], WOOD)
+        fill_poly(canvas, [(lx, ly + 1), (lx + 2, ly + 1), (lx + 2, ly + drop), (lx, ly + drop)], kit.leg, None)
+        for leg_y in range(ly + 1, ly + drop + 1):
+            canvas.put(lx, leg_y, kit.leg_hi)
+    fill_poly(canvas, [p3, p2, (p2[0], p2[1] + SKIRT), (p3[0], p3[1] + SKIRT)], kit.left)
+    fill_poly(canvas, [p2, p1, (p1[0], p1[1] + SKIRT), (p2[0], p2[1] + SKIRT)], kit.right)
+    for t in range(3, 25):  # bright lip below the top, then a drawer with its handle on the long face.
+        canvas.put(p3[0] + t, p3[1] + (t + 1) // 2 + 1, kit.trim)
+    for t in range(8, 21):
+        canvas.put(p3[0] + t, p3[1] + (t + 1) // 2 + 2, kit.seam)
+    canvas.put(p3[0] + 14, p3[1] + 9, kit.knob)
+    canvas.put(p3[0] + 15, p3[1] + 10, kit.knob)
+    _draw_desk_top(canvas, x, y, kit, (p0, p1, p2, p3))
 
 
-def draw_monitor(canvas: Canvas, x: int, y: int, screen: str, tick: int, glow: bool = True) -> None:
-    """A small monitor on the left of the desk: a bezeled screen facing the camera, on a stand over the desk top."""
-    mx, my = x + 13, y - 10
-    cx = mx - 6
-    fill_poly(canvas, [(cx - 6, y + 7), (cx, y + 4), (cx + 6, y + 7), (cx, y + 10)], METAL)
-    # The neck goes over the base and has no bottom edge, so the two read as a single outlined piece.
-    for neck_y in range(my + 11, y + 7):
-        canvas.put(cx - 1, neck_y, OUTLINE)
-        canvas.put(cx, neck_y, METAL_D)
-        canvas.put(cx + 1, neck_y, OUTLINE)
-    fill_poly(canvas, [(mx, my), (mx, my + 10), (mx - 13, my + 16), (mx - 13, my + 6)], BEZEL)
-    bg = SCREEN_BG[screen] if glow else SCREEN_BG["idle"]
-    rows = SCREENS[screen] if glow else []
-    for col in range(10):
-        top = my + 2 + ((col + 2) * 6) // 13
-        for row in range(7):
+def _screen_pixels(canvas: Canvas, mx: int, my: int, cols: int, height: int, slope: int, bg: Color, rows: list, tick: int, idle: bool) -> None:
+    for col in range(cols):
+        top = my + 2 + ((col + 2) * 6) // slope
+        for row in range(height):
             color = bg
-            if not glow and 4 <= col + row <= 5 and row <= 4:
+            if idle and 4 <= col + row <= 5 and row <= 4:
                 color = SCREEN_SHINE
             if rows and row % 2 == 0:
                 line = (row // 2 + tick // 3)
                 width = 3 + (line * 7) % 8
                 if col < width:
                     color = rows[line % len(rows)]
+            elif rows and col + row == cols - 1:
+                color = tuple(min(255, c + 34) for c in bg)  # diagonal glare over a lit screen.
             canvas.put(mx - 2 - col, top + row, color)
 
 
-def draw_keyboard(canvas: Canvas, x: int, y: int) -> None:
-    fill_poly(canvas, [(x + 24, y + 9), (x + 33, y + 13), (x + 27, y + 16), (x + 18, y + 12)], (238, 240, 248))
-
-
-def draw_props(canvas: Canvas, x: int, y: int, seed: int) -> None:
-    """A small object per desk, varied by seed: mug, paper stack or tiny plant."""
-    kind = seed % 3
-    px, py = x + 13, y + 9
-    if kind == 0:
-        fill_poly(canvas, [(px, py), (px + 3, py), (px + 3, py + 3), (px, py + 3)], (240, 110, 110))
-    elif kind == 1:
-        fill_poly(canvas, [(px - 2, py + 1), (px + 3, py - 1), (px + 7, py + 1), (px + 2, py + 3)], (250, 250, 255))
-    else:
-        fill_poly(canvas, [(px, py + 1), (px + 3, py + 1), (px + 3, py + 3), (px, py + 3)], (200, 130, 90))
-        fill_poly(canvas, [(px - 1, py - 3), (px + 4, py - 3), (px + 3, py), (px, py)], (96, 190, 120), None)
+def draw_monitor(canvas: Canvas, x: int, y: int, screen: str, tick: int, glow: bool = True, kit: Kit = CLASSIC) -> None:
+    """A monitor on the left of the desk: a cased screen facing the camera, on a stand over the desk top."""
+    wide = kit.monitor == "wide"
+    mx, my = x + (15 if wide else 13), y - 10
+    width, tall, cols, rows_tall = (16, 9, 13, 6) if wide else (13, 10, 10, 7)
+    depth = {"crt": 3, "flat": 1, "wide": 1, "candy": 2}[kit.monitor]
+    cx = x + 7
+    fill_poly(canvas, [(cx - 6, y + 7), (cx, y + 4), (cx + 6, y + 7), (cx, y + 10)], kit.stand)
+    for t in range(1, 6):  # lit rim of the foot.
+        canvas.put(cx - t, y + 4 + (t + 1) // 2, kit.stand_hi)
+    # The neck goes over the base and has no bottom edge, so the two read as a single outlined piece.
+    for neck_y in range(my + 11, y + 7):
+        canvas.put(cx - 1, neck_y, OUTLINE)
+        canvas.put(cx, neck_y, kit.neck)
+        canvas.put(cx + 1, neck_y, OUTLINE)
+    drop = (width * 6) // 13
+    back = (-depth * 2, -depth)
+    fill_poly(canvas, [(mx - width, my + drop), (mx - width, my + drop + tall), (mx - width + back[0], my + drop + tall + back[1]), (mx - width + back[0], my + drop + back[1])], kit.case)
+    fill_poly(canvas, [(mx, my), (mx - width, my + drop), (mx - width + back[0], my + drop + back[1]), (mx + back[0], my + back[1])], kit.case_hi)
+    fill_poly(canvas, [(mx, my), (mx, my + tall), (mx - width, my + drop + tall), (mx - width, my + drop)], kit.bezel)
+    bg = SCREEN_BG[screen] if glow else SCREEN_BG["idle"]
+    rows = SCREENS[screen] if glow else []
+    _screen_pixels(canvas, mx, my, cols, rows_tall, 13, bg, rows, tick, not glow)
+    canvas.put(mx - 2, my + tall - 1, (120, 240, 150) if glow else (90, 96, 110))  # power light.
 
 
 ICONS = {

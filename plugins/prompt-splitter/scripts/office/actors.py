@@ -1,7 +1,7 @@
 """Behaviour of the office characters: where each one goes and how it animates, per split state."""
 import zlib
 
-from . import props, sprites
+from . import deskitems, props, sprites
 from .life import Life, work_glance
 from .model import Worker
 
@@ -10,7 +10,6 @@ STAND = (36, 6)  # foot point beside the own desk, relative to its corner.
 SLOTS = [(46, 26), (16, 30), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
 POSE = {"code": "type", "term": "type", "web": "type", "doc": "read", "delegate": "phone"}
 SCREEN = {"code": "code", "term": "term", "web": "web", "doc": "doc", "delegate": "term"}
-CHAIR = (90, 96, 130)
 BODY_H = 23
 
 
@@ -33,6 +32,8 @@ class Actor:
     def __init__(self, worker: Worker, look: sprites.Look):
         self.worker, self.look = worker, look
         self.seed = zlib.crc32(worker.id.encode())
+        # By position in the split, so desks side by side differ and a desk never changes while the split runs.
+        self.kit = props.KITS[(zlib.crc32(worker.group.encode()) + worker.index) % len(props.KITS)]
         self.desk = (0, 0)
         self.foot = (0, 0)
         self.goal = (0, 0)
@@ -143,13 +144,12 @@ class Actor:
         x, y = self.desk
         pose, eyes, _, screen = self.appearance(tick)
         hx, hy = self.head()
-        props.draw_chair(canvas, x, y, CHAIR)
+        props.draw_chair(canvas, x, y, self.kit)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "back", eyes=eyes)
-        props.draw_desk(canvas, x, y)
-        props.draw_monitor(canvas, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle")
-        props.draw_keyboard(canvas, x, y)
-        props.draw_props(canvas, x, y, self.seed)
+        props.draw_desk(canvas, x, y, self.kit)
+        props.draw_monitor(canvas, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle", kit=self.kit)
+        deskitems.draw_items(canvas, x, y, self.kit, self.seed, tick)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "front", eyes=eyes)
 

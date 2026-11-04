@@ -1,6 +1,6 @@
 {
   "name": "prompt-splitter",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Splits a multi-request prompt into separate concurrent background Claude sessions, one per request or context group.",
   "types": "./types/index.d.ts",
   "author": {

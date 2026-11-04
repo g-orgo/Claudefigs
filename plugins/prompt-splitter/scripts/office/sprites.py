@@ -101,16 +101,25 @@ LOW = ["..otTotKKtoTto..", "..otoTtKKtToto..", "...otoTTTToto..."]
 # name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx).
 # Body rows from index FRONT_ROW on are drawn after the desk, resting on it.
 FRONT_ROW = 6
+# Seated overlays are stamped again after the desk, so an arm always rests on top of the furniture.
+# The right arm is longer because the desk's rear edge runs down-right and its hand must still reach the keyboard.
+ARM_L = (2, 2, ["otTo", "otTo", "otTo", "otto", "osso", ".oo."])
+ARM_L_TAP = (2, 2, ["otTo", "otTo", "otTo", "otTo", "otto", "osso", ".oo."])
+ARM_R = (2, 10, ["oTto", "oTto", "oTto", "oTto", "oTto", "otto", "osso", ".oo."])
+ARM_R_TAP = (2, 10, ["oTto", "oTto", "oTto", "oTto", "otto", "osso", ".oo."])
+ARM_R_HOLD = (2, 10, ["oTto", "oTto", "oTto", "otto", "osso", ".oo."])
+SHEET = (4, 4, ["oooooooo", "oWWWWWWo", "oWggWWWo", "oWWWWWWo", "oWggggWo", "oWWWWWWo", "oooooooo"])
+FOLDED = (5, 1, [".ooooooooooooo", "ottTTTTTTTTttso", "ottttttttttttso", ".ooooooooooooo"])
 CUP_UP = (-2, 12, ["oooo.", "occoo", "occ.o", "oooo.", "oTo", "oTo"])
 CUP_LOW = (3, 12, ["oooo.", "occoo", "occ.o", "oooo."])
 PHONE = (-6, 14, ["ooo", "ono", "ono", "oso", "oTo", "oTo", "oto"])
-CHIN = (-1, 11, ["oso", "oso", "oTo", "oTo", "oto"])
-sit = [SHOULDERS, *TORSO, *LOW]
-hold = [SHOULDERS, *TORSO, "..osoWWWWWWoso..", "...ooWggWWWoo...", "....oWWggWWo...."]
+CHIN = (-1, 11, ["oso", "oso", "oTo", "oTo", "oTo", "oTo", "oTo", "oto", ".o."])
+sit = [SHOULDERS, *TORSO, *LOW[:2]]
 standing = [SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS]
 HAND = (2, 12, ["oso", "oTo"])
+REST = [ARM_L, ARM_R]
 POSES = {
-    "look": (9, [(sit, 0, "open", [], ""), (sit, 0, "right", [], ""), (sit, 1, "open", [], ""), (sit, 0, "blink", [], "")]),
+    "look": (9, [(sit, 0, "open", REST, ""), (sit, 0, "right", REST, ""), (sit, 1, "open", REST, ""), (sit, 0, "blink", REST, "")]),
     "chat": (6, [(standing, 0, "open", [], ""), (standing, 1, "happy", [HAND], ""), (standing, 0, "right", [HAND], ""), (standing, 1, "open", [], "")]),
     "bob": (5, [(standing, 0, "happy", [], ""), (standing, 1, "open", [], "")]),
     "stand": (7, [([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
@@ -118,14 +127,16 @@ POSES = {
                  ([SHOULDERS, *TORSO, *ARMS_DOWN, *STEP_B], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
     "wait": (9, [([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "right", [CUP_LOW], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "right", [CUP_LOW], ""),
                  ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "right", [CUP_UP], "steam"), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "happy", [CUP_LOW], "")]),
-    "type": (2, [(sit + ["...oso....oso...", "...oso.........."], 0, "down", [], ""), (sit + ["...oso....oso...", "..........oso..."], 1, "down", [], "")]),
-    "read": (8, [(hold, 0, "down", [], ""), (hold, 1, "down", [], ""), (hold, 1, "down", [], ""), (hold, 0, "open", [], "")]),
-    "think": (10, [(sit, 0, "open", [CHIN], "dots"), (sit, 1, "right", [CHIN], "dots")]),
-    "phone": (6, [(sit, 0, "open", [PHONE], ""), (sit, 1, "happy", [PHONE], "")]),
-    "coffee": (12, [(sit, 0, "happy", [CUP_LOW], "done"), (sit, 1, "blink", [CUP_UP], "steam"), (sit, 0, "open", [CUP_LOW], "done")]),
-    "nap": (14, [(sit, 6, "blink", [], "zzz"), (sit, 7, "blink", [], "zzz")]),
-    "slump": (14, [(sit, 6, "blink", [], "fail"), (sit, 7, "blink", [], "fail")]),
+    "type": (2, [(sit, 0, "down", [ARM_L_TAP, ARM_R], ""), (sit, 1, "down", [ARM_L, ARM_R_TAP], "")]),
+    "read": (8, [(sit, 0, "down", [SHEET, ARM_L, ARM_R_HOLD], ""), (sit, 1, "down", [SHEET, ARM_L, ARM_R_HOLD], ""),
+                 (sit, 1, "down", [SHEET, ARM_L, ARM_R_HOLD], ""), (sit, 0, "open", [SHEET, ARM_L, ARM_R_HOLD], "")]),
+    "think": (10, [(sit, 0, "open", [ARM_L, CHIN], "dots"), (sit, 1, "right", [ARM_L, CHIN], "dots")]),
+    "phone": (6, [(sit, 0, "open", [ARM_L, PHONE], ""), (sit, 1, "happy", [ARM_L, PHONE], "")]),
+    "coffee": (12, [(sit, 0, "happy", [ARM_L, CUP_LOW], "done"), (sit, 1, "blink", [ARM_L, CUP_UP], "steam"), (sit, 0, "open", [ARM_L, CUP_LOW], "done")]),
+    "nap": (14, [(sit, 6, "blink", [FOLDED], "zzz"), (sit, 7, "blink", [FOLDED], "zzz")]),
+    "slump": (14, [(sit, 6, "blink", [FOLDED], "fail"), (sit, 7, "blink", [FOLDED], "fail")]),
 }
+LYING = 4  # from this head drop on, the head rests on the desk and is drawn over it.
 
 
 def _palette(look: Look) -> dict[str, Color]:
@@ -150,17 +161,8 @@ def frame_of(pose: str, tick: int) -> tuple:
     return frames[(tick // speed) % len(frames)]
 
 
-def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str = "all", flip: bool = False, eyes: str = "") -> str:
-    """Draws a 16px wide character whose head top is at y; body starts at y+11. Returns the frame's fx name."""
-    body, dy, expression, arms, fx = frame_of(pose, tick)
-    pal = _palette(look)
-    if layer in ("all", "front"):
-        _stamp(canvas, x, y + 11 + FRONT_ROW, body[FRONT_ROW:], pal, flip)
-    if layer == "front":
-        return fx
-    _stamp(canvas, x, y + 11 + dy // 3, body[:FRONT_ROW], pal, flip)
+def _draw_head(canvas: Canvas, x: int, y: int, look: Look, pal: dict, dy: int, mood: str, tick: int, flip: bool) -> None:
     _stamp(canvas, x, y + dy, HEAD, pal, flip)
-    mood = eyes or expression
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
     for row, text in EYES[mood]:
@@ -170,7 +172,29 @@ def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer
         for row, text in GLASSES:
             _stamp(canvas, x, y + dy + row, [text.replace(" ", ".")], pal, flip)
     _stamp(canvas, x - 2, y + dy - 2, HAIR[look.hair_style], pal, flip, 19)
+
+
+def _draw_arms(canvas: Canvas, x: int, y: int, arms: list, pal: dict, flip: bool) -> None:
     for top, col, rows in arms:
         wide = max(len(row) for row in rows)
         _stamp(canvas, x + (16 - col - wide if flip else col), y + 11 + top, rows, pal, flip, wide - 1)
+
+
+def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str = "all", flip: bool = False, eyes: str = "") -> str:
+    """Draws a 16px wide character whose head top is at y; body starts at y+11. Returns the frame's fx name.
+
+    "back" goes behind the desk, "front" over it: arms and a head lying on the desk are repeated there."""
+    body, dy, expression, arms, fx = frame_of(pose, tick)
+    pal = _palette(look)
+    mood = eyes or expression
+    if layer in ("all", "front"):
+        _stamp(canvas, x, y + 11 + FRONT_ROW, body[FRONT_ROW:], pal, flip)
+    if layer == "front":
+        _draw_arms(canvas, x, y, arms, pal, flip)
+        if dy >= LYING:
+            _draw_head(canvas, x, y, look, pal, dy, mood, tick, flip)
+        return fx
+    _stamp(canvas, x, y + 11 + dy // 3, body[:FRONT_ROW], pal, flip)
+    _draw_head(canvas, x, y, look, pal, dy, mood, tick, flip)
+    _draw_arms(canvas, x, y, arms, pal, flip)
     return fx

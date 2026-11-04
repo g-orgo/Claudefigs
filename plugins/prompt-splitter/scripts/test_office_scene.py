@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from claude_office import DRAW_S, FRAME_S, PARTIAL, FrameClock, handle_key, keys_of, open_session, parse_mouse, session_command
-from office import props
+from office import actors, deskitems, props, sprites
 from office.model import Line, Worker
 from office.actors import SLOTS, resolve_target
 from office.bubble import body_rows, chat_geometry
@@ -538,6 +538,45 @@ class FurnitureTests(unittest.TestCase):
                 while canvas.rows[run][col] in (props.METAL, props.METAL_D):
                     run -= 1
                 self.assertNotEqual(canvas.rows[run][col], self.FLOOR, f"gap above leg column {col}")
+
+    def test_seated_arms_are_drawn_over_the_desk_top(self):
+        look = sprites.LOOKS[0]
+        skin = sprites.rgb(look.skin)
+        x, y = 10, 20
+        for pose in ("type", "look", "read", "think", "phone", "coffee"):
+            for tick in range(0, 48, 4):
+                canvas = self.station(lambda c: props.draw_desk(c, x, y))
+                sprites.draw(canvas, x + props.SEAT_DX, y + props.SEAT_DY, look, pose, tick, "front")
+                on_top = [(col, row) for row in range(y + 8, y + 15) for col in range(x + 20, x + 36) if canvas.rows[row][col] == skin]
+                self.assertTrue(on_top, f"{pose} has no hand on the desk at tick {tick}")
+
+    def test_head_on_the_desk_is_not_cut_by_it(self):
+        look = sprites.LOOKS[0]
+        x, y = 10, 20
+        for pose in ("nap", "slump"):
+            canvas = self.station(lambda c: props.draw_desk(c, x, y))
+            sprites.draw(canvas, x + props.SEAT_DX, y + props.SEAT_DY, look, pose, 0, "front")
+            self.assertIn(sprites.rgb(look.skin), {c for row in canvas.rows[y + 5:y + 10] for c in row})
+
+    def test_every_kit_has_its_items_and_keeps_them_on_the_desk_top(self):
+        self.assertEqual(len({kit.name for kit in props.KITS}), len(props.KITS))
+        x, y = 10, 15
+        for kit in props.KITS:
+            near, far, note = kit.items
+            for name in (*near, far, *([note] if note else [])):
+                self.assertIn(name, deskitems.ITEMS)
+            for name, (dx, dy) in [*[(n, deskitems.NEAR_SLOT) for n in near], (far, deskitems.FAR_SLOT), *([(note, deskitems.NOTE_SLOT)] if note else [])]:
+                canvas = self.station(lambda c: deskitems.draw_item(c, x + dx, y + dy, name))
+                lowest = max(r for r, row in enumerate(canvas.rows) if any(c != self.FLOOR for c in row))
+                base = [col for col, c in enumerate(canvas.rows[lowest]) if c != self.FLOOR]
+                for col in base:  # the object's base stays above the desk's two front edges.
+                    edge = y + 6 + (col - x) / 2 if col - x <= 28 else y + 20 - (col - x - 28) / 2
+                    self.assertLessEqual(lowest, edge + 1, f"{name} of {kit.name} overhangs at column {col}")
+
+    def test_neighbour_desks_of_a_split_use_different_kits(self):
+        actors_ = [actors.Actor(Worker(id=f"w{i}", session_id="", name="n", title="t", item_label=str(i), group="g", index=i,
+                                       cwd="", started_ms=0, state="working"), sprites.LOOKS[0]) for i in range(1, 6)]
+        self.assertEqual(len({a.kit.name for a in actors_}), len(props.KITS))
 
     def test_idle_monitor_shows_a_lit_screen_with_bezel_and_reflection(self):
         canvas = self.station(lambda c: props.draw_monitor(c, 10, 20, "idle", 0, glow=False))

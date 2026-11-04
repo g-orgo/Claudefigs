@@ -47,6 +47,8 @@ A primeira tela é o corredor do diretório atual. Em telas a partir de 188x46 a
 
 A caixa vermelha sobre a mesa, ou a tecla `w`, leva a **Todas as sessões**, com as sessões de qualquer diretório. Entrar por uma porta mostra a sala da sessão, com um personagem por item e, acima de cada um, um balão com o final da atividade, no mesmo formato do painel lateral: `Voce`, `Claude`, as etapas descritivas (`Estou lendo o arquivo api.md (x3)`) e o estado na última linha. Os balões narram em primeira pessoa, com o arquivo ou comando em mão.
 
+Cada mesa de um split usa um dos cinco kits de móveis, conforme a posição do item: clássica, retrô, gamer, ateliê e biblioteca. O kit define o tampo, a cadeira, o monitor, o teclado e os objetos sobre a mesa (`office/props.py` e `office/deskitems.py`).
+
 | Estado do split | O que o personagem faz |
 | --- | --- |
 | Rodando | digita, lê um papel ou fala ao telefone conforme a ferramenta em uso; a tela do monitor acompanha, e de vez em quando ele olha em volta ou toma um gole de café |
