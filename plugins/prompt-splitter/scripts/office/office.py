@@ -324,6 +324,8 @@ class Office:
             argv = [sys.executable, DISPATCH, plan]
         self.inflight = True
         job = {"kind": kind, "draft": self.composer.state(), "title": title, "plan": plan, **room}
+        self.composer.clear()  # instant feedback: the draft leaves now and comes back only if the send fails.
+        self.notify("Enviando...")
         threading.Thread(target=self._run, args=(job, argv, cwd), daemon=True).start()
 
     def _write_plan(self, title: str, prompt: str) -> str:
@@ -371,7 +373,6 @@ class Office:
                 if not self.composer.text:
                     self.composer.restore(job["draft"])
                 continue
-            self.composer.clear()
             if job["kind"] == "hall":
                 self.notify("Nova sessao iniciada")
             elif COPY_WORDING.search(output or ""):

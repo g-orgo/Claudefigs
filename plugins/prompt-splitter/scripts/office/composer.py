@@ -136,6 +136,29 @@ class Composer:
     def shift_right(self) -> None:
         self._move_to(self.cursor + 1, True, 1)
 
+    def _line_move(self, delta: int) -> int:
+        """Index one wrapped line above (-1) or below (1) at the same column; the draft's start or end past the edge."""
+        if not self._lines:
+            return 0 if delta < 0 else len(self.text)
+        starts, count = list(self._starts), len(self._lines)
+        line = _cursor_line(self.cursor, starts, count)
+        target = line + delta
+        if target < 0:
+            return 0
+        if target >= count:
+            return len(self.text)
+        column = self.cursor - starts[line]
+        width = len(self._lines[target])
+        if target < count - 1 and width:
+            width -= 1  # the end of a full line is the next line's start, where the caret would be drawn.
+        return starts[target] + min(column, width)
+
+    def move_up(self) -> None:
+        self._move_to(self._line_move(-1), False, -1)
+
+    def move_down(self) -> None:
+        self._move_to(self._line_move(1), False, 1)
+
     def move_home(self, extend: bool = False) -> None:
         self._move_to(0, extend, -1)
 

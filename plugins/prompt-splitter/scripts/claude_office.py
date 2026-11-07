@@ -26,8 +26,9 @@ REFRESH_TICKS = 4
 FONT = "/usr/share/fonts/google-noto/NotoSansMono-Regular.ttf"
 NEXT = {"\x1b[C", "\x1b[B"}
 PREVIOUS = {"\x1b[D", "\x1b[A"}
-ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?)?")
-PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*)?")
+ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?|O[A-Z]?)?")  # CSI, or SS3 (arrows in application cursor mode).
+PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*|O)?")
+SS3_KEYS = {f"\x1bO{c}": f"\x1b[{c}" for c in "ABCDHF"}  # application cursor mode sends ESC O x; read it as ESC [ x.
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 LEFT_BUTTON, WHEEL_UP, WHEEL_DOWN = 0, 64, 65
 MOTION = 32
@@ -61,7 +62,8 @@ def keys_of(data: str) -> list[str]:
     while i < len(data):
         match = ESCAPE.match(data, i)
         size = match.end() - i if match else 1
-        out.append(data[i:i + size])
+        key = data[i:i + size]
+        out.append(SS3_KEYS.get(key, key))
         i += size
     return out
 
@@ -174,7 +176,12 @@ def handle_key(scene, key: str) -> None:
         elif key == "\t":
             scene.popup_accept()
         elif key in ("\x1b[A", "\x1b[B"):
-            scene.popup_move(-1 if key == "\x1b[A" else 1)  # the popup takes the arrows; the chat never scrolls here.
+            if scene.popup_items():
+                scene.popup_move(-1 if key == "\x1b[A" else 1)  # the popup takes the arrows; the chat never scrolls here.
+            elif key == "\x1b[A":
+                composer.move_up()
+            else:
+                composer.move_down()
         elif key in LEFT_KEYS:
             composer.move_left()
         elif key in RIGHT_KEYS:

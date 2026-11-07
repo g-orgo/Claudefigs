@@ -266,6 +266,27 @@ class KeyTests(unittest.TestCase):
 
 
 class SendTests(unittest.TestCase):
+    def test_draft_leaves_at_once_and_returns_when_the_send_fails(self):
+        import threading
+        gate = threading.Event()
+        def slow(argv, cwd):
+            gate.wait(5)
+            return 1, ""
+        office = make_office(sender=slow)
+        claude_office.handle_key(office, "\t")
+        for key in "oi":
+            claude_office.handle_key(office, key)
+        with mock.patch.object(Office, "_write_plan", return_value="/nonexistent-plan.json"):
+            office.submit()
+        self.assertEqual(office.composer.text, "")
+        gate.set()
+        for _ in range(200):
+            office.drain()
+            if not office.inflight:
+                break
+            import time; time.sleep(0.01)
+        self.assertEqual(office.composer.text, "oi")
+
     def setUp(self):
         os.makedirs(SCRATCH, exist_ok=True)
         self._old_tmp = tempfile.tempdir
@@ -696,6 +717,34 @@ class CursorKeyTests(unittest.TestCase):
         office = make_office()
         claude_office.handle_key(office, "\t")
         return office
+
+    def test_application_mode_arrows_are_single_keys(self):
+        self.assertEqual(claude_office.keys_of("\x1bOA\x1bOB\x1bOC\x1bOD"), ["\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D"])
+        self.assertTrue(claude_office.PARTIAL.fullmatch("\x1bO"))
+
+    def test_up_and_down_walk_wrapped_lines_and_keep_focus(self):
+        office = self.focused_office()
+        for key in "palavra " * 40:
+            claude_office.handle_key(office, key)
+        office.render()  # the draw stores the wrapped lines the arrows walk.
+        draft = office.composer
+        self.assertGreater(len(draft._lines), 2)
+        end = draft.cursor
+        claude_office.handle_key(office, "\x1b[A")
+        self.assertTrue(draft.focused)
+        self.assertEqual(office.mode, "hall")
+        line = composer_mod._cursor_line(draft.cursor, list(draft._starts), len(draft._lines))
+        self.assertEqual(line, len(draft._lines) - 2)
+        claude_office.handle_key(office, "\x1b[B")
+        claude_office.handle_key(office, "\x1b[B")  # Down on the last line goes to the end of the draft.
+        self.assertEqual(draft.cursor, end)
+        for _ in range(len(draft._lines)):
+            claude_office.handle_key(office, "\x1b[A")
+        self.assertEqual(draft.cursor, 0)
+        for key in claude_office.keys_of("\x1bOB" * (len(draft._lines) + 1)):
+            claude_office.handle_key(office, key)
+        self.assertEqual(draft.cursor, end)
+        self.assertTrue(draft.focused)
 
     def test_arrow_home_and_end_sequences_move_the_cursor(self):
         office = self.focused_office()
