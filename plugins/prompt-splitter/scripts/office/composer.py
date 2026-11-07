@@ -38,13 +38,14 @@ CARET = "_"
 POPUP_ROWS = 5  # most suggestions shown above the box.
 PLACEHOLDER_RE = re.compile(r"\[Imagem #(\d+)\]")
 PLACEHOLDER_TAIL_RE = re.compile(r"\[Imagem #(\d+)\]$")
+WORD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
 # Pixels cut from the first rows of each corner, per ring of the border.
 RINGS = ((0, (3, 1, 1)), (1, (2, 1)), (2, (1,)), (3, (1,)))  # (inset, cuts) from the outside in.
 
 
 class Composer:
     def __init__(self):
-        self.text = ""
+        self._text = ""
         self.focused = False
         self.hovered = False  # the pointer is over the box; hover never gives focus.
         self.images: dict[int, str] = {}  # placeholder number -> absolute image path, for this draft.
@@ -52,15 +53,119 @@ class Composer:
         self.highlight = 0  # index of the highlighted suggestion.
         self._highlight_text = ""  # the draft the highlight belongs to; a new draft starts at the top.
         self.dismissed: str | None = None  # the draft whose popup Esc closed; it stays closed until the draft changes.
+        self.cursor = 0  # text index of the caret, always between 0 and len(text).
+        self.anchor: int | None = None  # where a selection started; None when nothing is selected.
+        self.dragging = False  # a left button is held down over the text.
+        self._lines: tuple[str, ...] | None = None  # wrapped lines of the last draw, for mouse mapping.
+        self._starts: tuple[int, ...] = ()  # text index where each wrapped line starts.
+        self._first = 0  # terminal row of the first text line.
+        self._x = 0  # terminal column of the first text cell.
+        self._window = 0  # index of the first wrapped line in the visible window.
+        self._capacity = 1  # wrapped lines the box shows.
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        """A draft assigned from outside puts the caret at its end; the editing methods set it again."""
+        self._text = value
+        self.cursor = len(value)
 
     def focus(self) -> None:
         self.focused = True
 
     def blur(self) -> None:
         self.focused = False
+        self.anchor = None
+        self.dragging = False
+
+    def selection(self) -> tuple[int, int] | None:
+        """(start, end) of the selected text, or None when nothing is selected."""
+        if self.anchor is None:
+            return None
+        start, end = sorted((self.anchor, self.cursor))
+        return (start, end) if start != end else None
+
+    def selected_text(self) -> str:
+        """The selected draft text as shown, placeholders included; empty when nothing is selected."""
+        span = self.selection()
+        return self.text[span[0]:span[1]] if span else ""
+
+    def _spans(self) -> list[tuple[int, int]]:
+        """Text ranges of the placeholders, which the caret never enters."""
+        return [(match.start(), match.end()) for match in PLACEHOLDER_RE.finditer(self.text)]
+
+    def _snap(self, index: int, direction: int) -> int:
+        """`index` clamped to the draft and pushed out of any placeholder toward `direction`."""
+        index = max(0, min(index, len(self.text)))
+        for start, end in self._spans():
+            if start < index < end:
+                return start if direction < 0 else end
+        return index
+
+    def _snap_nearest(self, index: int) -> int:
+        """`index` clamped to the draft, moved to the nearer edge of a placeholder it lands inside."""
+        index = max(0, min(index, len(self.text)))
+        for start, end in self._spans():
+            if start < index < end:
+                return start if index - start <= end - index else end
+        return index
+
+    def _move_to(self, index: int, extend: bool, direction: int) -> None:
+        """Puts the caret at a snapped index, starting or keeping a selection when `extend` is set."""
+        if extend:
+            if self.anchor is None:
+                self.anchor = self.cursor
+        else:
+            self.anchor = None
+        self.cursor = self._snap(index, direction)
+
+    def move_left(self) -> None:
+        span = self.selection()
+        self._move_to(span[0] if span else self.cursor - 1, False, -1)
+
+    def move_right(self) -> None:
+        span = self.selection()
+        self._move_to(span[1] if span else self.cursor + 1, False, 1)
+
+    def shift_left(self) -> None:
+        self._move_to(self.cursor - 1, True, -1)
+
+    def shift_right(self) -> None:
+        self._move_to(self.cursor + 1, True, 1)
+
+    def move_home(self, extend: bool = False) -> None:
+        self._move_to(0, extend, -1)
+
+    def move_end(self, extend: bool = False) -> None:
+        self._move_to(len(self.text), extend, 1)
+
+    def _word_left(self) -> int:
+        index = self.cursor
+        while index > 0 and self.text[index - 1] not in WORD_CHARS:
+            index -= 1
+        while index > 0 and self.text[index - 1] in WORD_CHARS:
+            index -= 1
+        return index
+
+    def _word_right(self) -> int:
+        index = self.cursor
+        while index < len(self.text) and self.text[index] not in WORD_CHARS:
+            index += 1
+        while index < len(self.text) and self.text[index] in WORD_CHARS:
+            index += 1
+        return index
+
+    def move_word_left(self, extend: bool = False) -> None:
+        self._move_to(self._word_left(), extend, -1)
+
+    def move_word_right(self, extend: bool = False) -> None:
+        self._move_to(self._word_right(), extend, 1)
 
     def insert(self, string: str) -> None:
-        """Adds text at the end; line breaks and tabs become one space and other control characters are dropped."""
+        """Inserts text at the caret, replacing a selection; line breaks and tabs become one space."""
         self.dismissed = None
         out = []
         for ch in string:
@@ -68,7 +173,14 @@ class Composer:
                 out.append(" ")
             elif ch.isprintable():
                 out.append(ch)
-        self.text = (self.text + "".join(out))[:MAX_TEXT]
+        self._insert_text("".join(out))
+
+    def _insert_text(self, payload: str) -> None:
+        span = self.selection()
+        start, end = span if span else (self.cursor, self.cursor)
+        self.text = (self.text[:start] + payload + self.text[end:])[:MAX_TEXT]
+        self.cursor = min(start + len(payload), len(self.text))
+        self.anchor = None
 
     def paste(self, string: str) -> None:
         """A paste of image file paths attaches those images; any other paste is inserted as text."""
@@ -80,31 +192,67 @@ class Composer:
             self.attach(path)
 
     def attach(self, path: str) -> bool:
-        """Adds an image placeholder at the end; returns False when the draft has no room left for it."""
+        """Inserts an image placeholder at the caret; returns False when the draft has no room left for it."""
         self.dismissed = None
         token = f"[Imagem #{max(self.images, default=0) + 1}]"
         number = max(self.images, default=0) + 1
-        sep = " " if self.text and not self.text.endswith(" ") else ""
-        if len(self.text) + len(sep) + len(token) > MAX_TEXT:
+        span = self.selection()
+        start, end = span if span else (self.cursor, self.cursor)
+        before = self.text[:start]
+        sep = " " if before and not before.endswith(" ") else ""
+        if len(self.text) - (end - start) + len(sep) + len(token) > MAX_TEXT:
             return False
-        self.text += sep + token
+        self.text = self.text[:start] + sep + token + self.text[end:]
+        self.cursor = start + len(sep) + len(token)
+        self.anchor = None
         self.images[number] = os.path.abspath(path)
         if sep:
             self.spaced.add(number)
         return True
 
+    def _drop_placeholder(self, start: int, end: int, number: int) -> None:
+        """Removes a placeholder, its image and the separator space attach() gave it."""
+        left = start - 1 if number in self.spaced and start > 0 else start
+        del self.images[number]
+        self.spaced.discard(number)
+        self.text = self.text[:left] + self.text[end:]
+        self.cursor = left
+        self.anchor = None
+
     def backspace(self) -> None:
-        """Removes the last character, or the whole placeholder and its image when the text ends with one."""
+        """Deletes the selection, or the character or whole placeholder before the caret."""
         self.dismissed = None
-        tail = PLACEHOLDER_TAIL_RE.search(self.text)
-        if tail and int(tail.group(1)) in self.images:
-            number = int(tail.group(1))
-            start = tail.start() - 1 if number in self.spaced and tail.start() > 0 else tail.start()
-            del self.images[number]
-            self.spaced.discard(number)
-            self.text = self.text[:start]
+        span = self.selection()
+        if span is not None:
+            self._insert_text("")
             return
-        self.text = self.text[:-1]
+        if self.cursor == 0:
+            return
+        for match in PLACEHOLDER_RE.finditer(self.text):
+            number = int(match.group(1))
+            if match.end() == self.cursor and number in self.images:
+                self._drop_placeholder(match.start(), match.end(), number)
+                return
+        position = self.cursor - 1
+        self.text = self.text[:position] + self.text[self.cursor:]
+        self.cursor = position
+
+    def delete(self) -> None:
+        """Deletes the selection, or the character or whole placeholder after the caret."""
+        self.dismissed = None
+        span = self.selection()
+        if span is not None:
+            self._insert_text("")
+            return
+        for match in PLACEHOLDER_RE.finditer(self.text):
+            number = int(match.group(1))
+            if match.start() == self.cursor and number in self.images:
+                self._drop_placeholder(match.start(), match.end(), number)
+                return
+        if self.cursor < len(self.text):
+            position = self.cursor
+            self.text = self.text[:position] + self.text[position + 1:]
+            self.cursor = position
 
     def prompt_text(self) -> str:
         """The draft as sent to Claude: each placeholder becomes an `@<absolute path>` mention."""
@@ -114,10 +262,11 @@ class Composer:
         return PLACEHOLDER_RE.sub(mention, self.text)
 
     def trigger(self) -> tuple[str, str, int] | None:
-        """(kind, query, start) of the token being typed: a slash command at the very start, or an @ token at the end."""
-        if self.text.startswith("/") and " " not in self.text:
-            return "command", self.text[1:], 0
-        match = re.search(r"(?:^|\s)@(\S*)$", self.text)
+        """(kind, query, start) of the token before the caret: a slash command at the very start, or an @ token."""
+        head = self.text[:self.cursor]
+        if head.startswith("/") and " " not in head:
+            return "command", head[1:], 0
+        match = re.search(r"(?:^|\s)@(\S*)$", head)
         if match:
             return "file", match.group(1), match.start(1) - 1
         return None
@@ -147,7 +296,11 @@ class Composer:
         if index is not None and 0 <= index < len(items):
             self.highlight = index
         trig = self.trigger()
-        self.text = self.text[:trig[2]] + items[self.highlight][1]
+        inserted = items[self.highlight][1]
+        tail = self.text[self.cursor:]
+        self.text = self.text[:trig[2]] + inserted + tail
+        self.cursor = trig[2] + len(inserted)
+        self.anchor = None
         self.dismissed = None
         return True
 
@@ -163,12 +316,59 @@ class Composer:
 
     def restore(self, state: tuple[str, dict[int, str], set[int]]) -> None:
         self.text, self.images, self.spaced = state[0], dict(state[1]), set(state[2])
+        self.cursor = len(self.text)
+        self.anchor = None
 
     def clear(self) -> None:
         self.dismissed = None
         self.text = ""
         self.images = {}
         self.spaced = set()
+        self.cursor = 0
+        self.anchor = None
+        self.dragging = False
+
+    def index_at(self, col: int, row: int) -> int | None:
+        """Draft index under a terminal cell of the last draw, or None before the first draw."""
+        if self._lines is None:
+            return None
+        lines = self._lines
+        line = self._window + max(0, row - self._first) // pixelfont.LINE_ROWS
+        line = max(self._window, min(line, len(lines) - 1))
+        line = min(line, self._window + self._capacity - 1)
+        text = lines[line]
+        font_x = (col - self._x) * pixelfont.CELL_X
+        offset = 0
+        pixels = 0
+        if font_x > 0:
+            for ch in text:
+                width = pixelfont.glyph(ch)[0]
+                if not width:
+                    continue
+                if font_x < pixels + width:
+                    break
+                pixels += width + 1
+                offset += 1
+        return self._snap_nearest(self._starts[line] + offset)
+
+    def begin_drag(self, index: int) -> None:
+        """A left press on the text: the caret goes to the clicked index and a drag starts there."""
+        self.cursor = self._snap_nearest(index)
+        self.anchor = self.cursor
+        self.dragging = True
+
+    def drag_to(self, index: int) -> None:
+        """The pointer moved with the left button held: the selection follows it."""
+        if not self.dragging:
+            return
+        self.cursor = self._snap_nearest(index)
+        if self.anchor is None:
+            self.anchor = self.cursor
+
+    def end_drag(self) -> str:
+        """The left button was released; returns the text the drag selected, or an empty string."""
+        self.dragging = False
+        return self.selected_text()
 
 
 def field_geometry(cols: int, room: int | None = None) -> tuple[int, int]:
@@ -304,8 +504,68 @@ def draw_back_button(frame: Frame, col: int, top: int, selected: bool) -> None:
     overlay(frame, _back_canvas(selected), col, top)
 
 
+def _line_starts(lines: tuple[str, ...], text: str) -> list[int]:
+    """Draft index where each wrapped line starts, walking the text in order."""
+    starts = []
+    position = 0
+    for line in lines:
+        found = text.find(line, position) if line else position
+        if found < 0:
+            found = position
+        starts.append(found)
+        position = found + len(line)
+    return starts
+
+
+def _cursor_line(cursor: int, starts: list[int], count: int) -> int:
+    """Index of the wrapped line the caret belongs to; the last line starting at or before it."""
+    line = 0
+    for i, start in enumerate(starts):
+        if start <= cursor:
+            line = i
+        else:
+            break
+    return max(0, min(line, count - 1))
+
+
+def _select_background(frame: Frame, x: int, row: int, line: str, start: int, composer: "Composer") -> None:
+    """Paints the gold background under the selected part of one wrapped line."""
+    span = composer.selection() if composer.focused else None
+    if not span:
+        return
+    low, high = span
+    left, right = max(low, start), min(high, start + len(line))
+    if left >= right:
+        return
+    x0 = pixelfont.text_width(line[:left - start])
+    x1 = pixelfont.text_width(line[:right - start])
+    for c in range(x + x0 // pixelfont.CELL_X, x + max(x1 - 1, x0) // pixelfont.CELL_X + 1):
+        for r in range(row, row + pixelfont.CELL_Y):
+            if 0 <= r < frame.nrows and 0 <= c < frame.cols:
+                frame.cells[r][c] = (" ", None, GOLD_FOCUSED, False)
+
+
+def _draw_line(frame: Frame, x: int, row: int, line: str, start: int, composer: "Composer") -> None:
+    """Draws one wrapped line, with the selected part in ink over the gold background."""
+    span = composer.selection() if composer.focused else None
+    low, high = span if span else (0, 0)
+    pixels = 0
+    run = ""
+    painted = None
+    for i, ch in enumerate(line):
+        selected = span is not None and low <= start + i < high
+        if painted is not None and selected != painted:
+            pixels = pixelfont.draw_text(frame, x, row, run, INK_BROWN, GOLD_FOCUSED if painted else PARCHMENT, pixels)
+            run = ""
+        painted = selected
+        run += ch
+    if run:
+        pixelfont.draw_text(frame, x, row, run, INK_BROWN, GOLD_FOCUSED if painted else PARCHMENT, pixels)
+
+
 def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, composer: "Composer", destination: str, hints: tuple[str, ...], tick: int) -> None:
     """Draws the box in the `rows` rows from (`col`, `top`), over whatever the view drew there."""
+    composer._lines = None
     if width < 24:
         return
     canvas = _box(width, rows, composer.focused, composer.focused or composer.hovered).copy()
@@ -332,14 +592,27 @@ def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, compo
     capacity = 2 if rows == PANEL_ROWS else 1
     first = top + PLATE_ROWS + TEXT_TOP_ROWS
     x = col + PAD_CELLS
-    if composer.text:
-        lines = pixelfont.wrap(composer.text, inner * pixelfont.CELL_X - pixelfont.text_width(CARET) - 1)[-capacity:]
-        for i, line in enumerate(lines):
-            pixelfont.draw_text(frame, x, first + i * pixelfont.LINE_ROWS, line, INK_BROWN, PARCHMENT)
-    else:
-        lines = ("",)
-        if not composer.focused:
-            pixelfont.draw_text(frame, x, first, pixelfont.clip(PLACEHOLDER_IDLE, inner * pixelfont.CELL_X), FADED, PARCHMENT)
+    wrap_width = inner * pixelfont.CELL_X - pixelfont.text_width(CARET) - 1
+    lines = pixelfont.wrap(composer.text, wrap_width) if composer.text else ("",)
+    starts = _line_starts(lines, composer.text)
+    cursor_line = _cursor_line(composer.cursor, starts, len(lines))
+    window = max(0, cursor_line - capacity + 1)
+    window = min(window, max(0, len(lines) - capacity))
+    composer._lines, composer._starts = lines, tuple(starts)
+    composer._first, composer._x = first, x
+    composer._window, composer._capacity = window, capacity
+    for i in range(window, min(window + capacity, len(lines))):
+        row = first + (i - window) * pixelfont.LINE_ROWS
+        _select_background(frame, x, row, lines[i], starts[i], composer)
     if composer.focused and (tick // 4) % 2 == 0:
-        pixelfont.draw_text(frame, x, first + (len(lines) - 1) * pixelfont.LINE_ROWS, lines[-1] + CARET, INK_BROWN, PARCHMENT)
+        # The caret goes under the glyphs so a descender beside it is never erased.
+        line = lines[cursor_line]
+        offset = max(0, min(composer.cursor - starts[cursor_line], len(line)))
+        prefix = line[:offset]
+        caret_x = pixelfont.text_width(prefix) + 1 if prefix else 0
+        pixelfont.draw_text(frame, x, first + (cursor_line - window) * pixelfont.LINE_ROWS, CARET, INK_BROWN, PARCHMENT, caret_x)
+    for i in range(window, min(window + capacity, len(lines))):
+        _draw_line(frame, x, first + (i - window) * pixelfont.LINE_ROWS, lines[i], starts[i], composer)
+    if not composer.text and not composer.focused:
+        pixelfont.draw_text(frame, x, first, pixelfont.clip(PLACEHOLDER_IDLE, inner * pixelfont.CELL_X), FADED, PARCHMENT)
 

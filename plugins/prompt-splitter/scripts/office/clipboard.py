@@ -1,4 +1,4 @@
-"""Desktop clipboard access for the composer: reads images and text, and recognizes pasted image file paths."""
+"""Desktop clipboard access for the composer: reads and writes text, saves images, and recognizes pasted image paths."""
 import os
 import re
 import subprocess
@@ -72,6 +72,21 @@ def read_clipboard() -> tuple[str, str]:
         if result is not None:
             return result
     return (UNAVAILABLE, "")
+
+
+def write_clipboard(text: str) -> bool:
+    """Puts text on the desktop clipboard without waiting; False when the tool is missing or fails to start."""
+    argv = ["wl-copy"] if os.environ.get("WAYLAND_DISPLAY") else ["xclip", "-selection", "clipboard", "-i"]
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, FileNotFoundError):
+        return False
+    try:
+        process.stdin.write(text.encode("utf-8"))
+        process.stdin.close()
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _clean_path(token: str) -> str | None:

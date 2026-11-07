@@ -13,6 +13,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from office import clipboard  # noqa: E402
 from office.data import Poller, full_session_id  # noqa: E402
 from office.demo import DemoSource  # noqa: E402
 from office.office import Office  # noqa: E402
@@ -31,6 +32,19 @@ MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 LEFT_BUTTON, WHEEL_UP, WHEEL_DOWN = 0, 64, 65
 MOTION = 32
 PASTE_START, PASTE_END = "\x1b[200~", "\x1b[201~"
+LEFT_KEYS = {"\x1b[D"}
+RIGHT_KEYS = {"\x1b[C"}
+HOME_KEYS = {"\x1b[H", "\x1b[1~", "\x1bOH"}
+END_KEYS = {"\x1b[F", "\x1b[4~", "\x1bOF"}
+WORD_LEFT_KEYS = {"\x1b[1;5D"}
+WORD_RIGHT_KEYS = {"\x1b[1;5C"}
+SHIFT_LEFT_KEYS = {"\x1b[1;2D"}
+SHIFT_RIGHT_KEYS = {"\x1b[1;2C"}
+SHIFT_HOME_KEYS = {"\x1b[1;2H"}
+SHIFT_END_KEYS = {"\x1b[1;2F"}
+SHIFT_WORD_LEFT_KEYS = {"\x1b[1;6D"}
+SHIFT_WORD_RIGHT_KEYS = {"\x1b[1;6C"}
+DELETE_KEYS = {"\x1b[3~"}
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -94,6 +108,18 @@ def launch(argv: list[str], cwd: str | None) -> tuple[int, str]:
     return result.returncode, result.stdout + result.stderr
 
 
+def write_clipboard(text: str) -> bool:
+    """Puts text on the desktop clipboard through the office clipboard module."""
+    return clipboard.write_clipboard(text)
+
+
+def copy_selection(composer) -> None:
+    """Puts a finished non-empty selection on the desktop clipboard."""
+    text = composer.selected_text()
+    if text:
+        write_clipboard(text)
+
+
 def handle_key(scene, key: str) -> None:
     """Applies one key or mouse report to the scene; a plain Scene has no composer and keeps the old keys."""
     composer = getattr(scene, "composer", None)
@@ -102,10 +128,19 @@ def handle_key(scene, key: str) -> None:
         button, col, row, pressed = mouse
         hover = getattr(scene, "hover", None)
         if button & MOTION:  # bit 32: the pointer moved, with or without a button.
+            if composer is not None and composer.dragging and button == MOTION:
+                index = composer.index_at(col, row)
+                if index is not None:
+                    composer.drag_to(index)
+                return
             if hover is not None:
                 hover(col, row)
             return
         if not pressed:
+            if composer is not None and composer.dragging:
+                text = composer.end_drag()
+                if text:
+                    write_clipboard(text)
             return
         if button == LEFT_BUTTON and composer is not None and composer.focused:
             index = scene.popup_row_at(col, row)
@@ -115,6 +150,9 @@ def handle_key(scene, key: str) -> None:
         if button == LEFT_BUTTON and composer is not None:
             if scene.in_composer(col, row):
                 composer.focus()
+                index = composer.index_at(col, row)
+                if index is not None:
+                    composer.begin_drag(index)
                 return
             composer.blur()
         hits_back = getattr(scene, "hits_back", None)
@@ -137,6 +175,38 @@ def handle_key(scene, key: str) -> None:
             scene.popup_accept()
         elif key in ("\x1b[A", "\x1b[B"):
             scene.popup_move(-1 if key == "\x1b[A" else 1)  # the popup takes the arrows; the chat never scrolls here.
+        elif key in LEFT_KEYS:
+            composer.move_left()
+        elif key in RIGHT_KEYS:
+            composer.move_right()
+        elif key in HOME_KEYS:
+            composer.move_home()
+        elif key in END_KEYS:
+            composer.move_end()
+        elif key in WORD_LEFT_KEYS:
+            composer.move_word_left()
+        elif key in WORD_RIGHT_KEYS:
+            composer.move_word_right()
+        elif key in SHIFT_LEFT_KEYS:
+            composer.shift_left()
+            copy_selection(composer)
+        elif key in SHIFT_RIGHT_KEYS:
+            composer.shift_right()
+            copy_selection(composer)
+        elif key in SHIFT_HOME_KEYS:
+            composer.move_home(True)
+            copy_selection(composer)
+        elif key in SHIFT_END_KEYS:
+            composer.move_end(True)
+            copy_selection(composer)
+        elif key in SHIFT_WORD_LEFT_KEYS:
+            composer.move_word_left(True)
+            copy_selection(composer)
+        elif key in SHIFT_WORD_RIGHT_KEYS:
+            composer.move_word_right(True)
+            copy_selection(composer)
+        elif key in DELETE_KEYS:
+            composer.delete()
         elif key == "\x1b":
             if not scene.popup_dismiss():  # Esc closes the popup first, then leaves the field; the draft stays.
                 composer.blur()

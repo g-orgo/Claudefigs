@@ -10,7 +10,8 @@ import claude_office
 from office import composer as composer_mod
 from office import pixelfont
 from office.hallart import BAY_W
-from office.composer import MAX_TEXT, PANEL_ROWS, Composer, draw_composer, field_geometry
+from office.composer import (GOLD_FOCUSED, INK_BROWN, MAX_TEXT, PAD_CELLS, PANEL_ROWS, PLATE_ROWS,
+                             TEXT_TOP_ROWS, Composer, draw_composer, field_geometry)
 from office.model import Worker
 from office.office import Office
 from office.office import DISPATCH
@@ -574,3 +575,255 @@ class ImageDraftTests(unittest.TestCase):
         self.assertEqual(sent[-1][-1], f"olhe @{os.path.abspath(self.png)}")
         self.assertEqual(office.composer.text, "")
         self.assertEqual(office.composer.images, {})
+
+
+class CursorModelTests(unittest.TestCase):
+    def test_cursor_moves_clamps_and_clears_selection(self):
+        draft = Composer()
+        draft.insert("abc")
+        self.assertEqual(draft.cursor, 3)
+        draft.move_left()
+        self.assertEqual(draft.cursor, 2)
+        draft.move_home()
+        self.assertEqual(draft.cursor, 0)
+        draft.move_left()
+        self.assertEqual(draft.cursor, 0)
+        draft.move_end()
+        self.assertEqual(draft.cursor, 3)
+        draft.move_right()
+        self.assertEqual(draft.cursor, 3)
+        draft.shift_left()
+        self.assertEqual(draft.selected_text(), "c")
+        draft.move_left()
+        self.assertEqual((draft.cursor, draft.selection()), (2, None))
+
+    def test_placeholder_is_atomic_for_moves(self):
+        draft = Composer()
+        draft.insert("a")
+        draft.attach("/tmp/pic.png")
+        start = 2
+        end = len(draft.text)
+        self.assertEqual(draft.text[start:], "[Imagem #1]")
+        draft.move_left()
+        self.assertEqual(draft.cursor, start)
+        draft.move_right()
+        self.assertEqual(draft.cursor, end)
+        draft.cursor = 4  # inside the placeholder
+        draft.move_left()
+        self.assertEqual(draft.cursor, start)
+        draft.cursor = 4
+        draft.move_right()
+        self.assertEqual(draft.cursor, end)
+        draft.move_word_left()
+        self.assertEqual(draft.cursor, start)
+
+    def test_word_moves_use_word_boundaries(self):
+        draft = Composer()
+        draft.insert("abc def")
+        draft.move_word_left()
+        self.assertEqual(draft.cursor, 4)
+        draft.move_word_left()
+        self.assertEqual(draft.cursor, 0)
+        draft.move_word_right()
+        self.assertEqual(draft.cursor, 3)
+
+    def test_insert_backspace_and_delete_happen_at_the_cursor(self):
+        draft = Composer()
+        draft.insert("abcd")
+        draft.cursor = 2
+        draft.insert("X")
+        self.assertEqual((draft.text, draft.cursor), ("abXcd", 3))
+        draft.backspace()
+        self.assertEqual((draft.text, draft.cursor), ("abcd", 2))
+        draft.delete()
+        self.assertEqual((draft.text, draft.cursor), ("abd", 2))
+
+    def test_backspace_and_delete_remove_a_whole_placeholder(self):
+        draft = Composer()
+        draft.insert("a")
+        draft.attach("/tmp/pic.png")
+        draft.move_end()
+        draft.backspace()
+        self.assertEqual((draft.text, draft.images, draft.cursor), ("a", {}, 1))
+        draft.attach("/tmp/pic.png")
+        draft.move_home()
+        draft.move_right()
+        draft.move_right()  # start of the placeholder
+        draft.delete()
+        self.assertEqual((draft.text, draft.images, draft.cursor), ("a", {}, 1))
+
+    def test_typing_replaces_a_selection(self):
+        draft = Composer()
+        draft.insert("hello")
+        draft.shift_left()
+        draft.shift_left()
+        self.assertEqual(draft.selected_text(), "lo")
+        draft.insert("X")
+        self.assertEqual((draft.text, draft.cursor, draft.selection()), ("helX", 4, None))
+
+    def test_trigger_and_accept_leave_the_text_after_the_cursor(self):
+        draft = Composer()
+        draft.text = "run @fiZZy"
+        draft.cursor = 7
+        self.assertEqual(draft.trigger(), ("file", "fi", 4))
+        with mock.patch.object(draft, "suggestions", return_value=[("file.txt", "@file.txt ", "")]):
+            self.assertTrue(draft.accept("/tmp"))
+        self.assertEqual(draft.text, "run @file.txt ZZy")
+        self.assertEqual(draft.cursor, len("run @file.txt "))
+
+    def test_slash_command_trigger_uses_the_text_before_the_cursor(self):
+        draft = Composer()
+        draft.text = "/heXYZ"
+        draft.cursor = 3
+        self.assertEqual(draft.trigger(), ("command", "he", 0))
+        with mock.patch.object(draft, "suggestions", return_value=[("/help", "/help ", "")]):
+            self.assertTrue(draft.accept("/tmp"))
+        self.assertEqual(draft.text, "/help XYZ")
+        self.assertEqual(draft.cursor, len("/help "))
+
+    def test_clear_and_restore_put_the_cursor_in_a_valid_place(self):
+        draft = Composer()
+        draft.insert("abc")
+        draft.move_home()
+        draft.clear()
+        self.assertEqual(draft.cursor, 0)
+        draft.restore(("draft", {}, set()))
+        self.assertEqual(draft.cursor, len("draft"))
+
+
+class CursorKeyTests(unittest.TestCase):
+    def focused_office(self):
+        office = make_office()
+        claude_office.handle_key(office, "\t")
+        return office
+
+    def test_arrow_home_and_end_sequences_move_the_cursor(self):
+        office = self.focused_office()
+        for key in "abc":
+            claude_office.handle_key(office, key)
+        claude_office.handle_key(office, "\x1b[D")
+        self.assertEqual(office.composer.cursor, 2)
+        for key in ("\x1b[H", "\x1b[1~", "\x1bOH"):
+            claude_office.handle_key(office, key)
+            self.assertEqual(office.composer.cursor, 0)
+        for key in ("\x1b[F", "\x1b[4~", "\x1bOF"):
+            claude_office.handle_key(office, key)
+            self.assertEqual(office.composer.cursor, 3)
+
+    def test_ctrl_arrows_move_by_word_and_delete_removes_forward(self):
+        office = self.focused_office()
+        for key in "abc def":
+            claude_office.handle_key(office, key)
+        claude_office.handle_key(office, "\x1b[1;5D")
+        self.assertEqual(office.composer.cursor, 4)
+        claude_office.handle_key(office, "\x1b[H")
+        claude_office.handle_key(office, "\x1b[3~")
+        self.assertEqual(office.composer.text, "bc def")
+
+    def test_shift_keys_extend_selection_and_copy_each_change(self):
+        office = self.focused_office()
+        for key in "abc":
+            claude_office.handle_key(office, key)
+        with mock.patch("office.clipboard.write_clipboard") as write:
+            claude_office.handle_key(office, "\x1b[1;2D")
+            write.assert_called_once_with("c")
+            claude_office.handle_key(office, "\x1b[1;2D")
+            write.assert_called_with("bc")
+            claude_office.handle_key(office, "\x1b[1;6D")  # ctrl+shift+left: the whole word
+            write.assert_called_with("abc")
+        self.assertEqual(office.composer.selected_text(), "abc")
+
+    def test_shift_home_and_end_sequences_select_to_the_edges(self):
+        office = self.focused_office()
+        for key in "abc":
+            claude_office.handle_key(office, key)
+        with mock.patch("office.clipboard.write_clipboard") as write:
+            claude_office.handle_key(office, "\x1b[1;2H")
+            write.assert_called_once_with("abc")
+        office.composer.move_end()
+        with mock.patch("office.clipboard.write_clipboard") as write:
+            claude_office.handle_key(office, "\x1b[1;2H")
+            write.assert_called_once_with("abc")
+
+
+class MouseSelectionTests(unittest.TestCase):
+    def setUp(self):
+        self.office = make_office(rows=50)
+        claude_office.handle_key(self.office, "\t")
+        self.office.composer.insert("hello")
+        self.office.render()
+        self.col, self.top, _, _ = self.office.field_rect()
+        self.x = self.col + PAD_CELLS
+        self.first = self.top + PLATE_ROWS + TEXT_TOP_ROWS
+
+    def cell(self, col, row):
+        return f"\x1b[<{0 if row is None else 0};{col + 1};{row + 1}M"
+
+    def test_index_at_maps_cells_to_text_indices(self):
+        draft = self.office.composer
+        self.assertEqual(draft.index_at(self.x, self.first), 0)
+        end_x = self.x + (pixelfont.text_width("hello") + 1) // pixelfont.CELL_X
+        self.assertEqual(draft.index_at(end_x, self.first), 5)
+        self.assertEqual(draft.index_at(self.x + 100, self.first), 5)
+
+    def test_press_drag_and_release_select_and_copy_once(self):
+        end_x = self.x + (pixelfont.text_width("hello") + 1) // pixelfont.CELL_X
+        with mock.patch("office.clipboard.write_clipboard") as write:
+            claude_office.handle_key(self.office, f"\x1b[<0;{self.x + 1};{self.first + 1}M")
+            self.assertEqual(self.office.composer.cursor, 0)
+            self.assertTrue(self.office.composer.dragging)
+            claude_office.handle_key(self.office, f"\x1b[<32;{end_x + 1};{self.first + 1}M")
+            self.assertEqual(self.office.composer.selected_text(), "hello")
+            write.assert_not_called()  # motion does not copy.
+            claude_office.handle_key(self.office, f"\x1b[<0;{end_x + 1};{self.first + 1}m")
+            write.assert_called_once_with("hello")
+        self.assertFalse(self.office.composer.dragging)
+        self.assertEqual(self.office.composer.selected_text(), "hello")
+
+    def test_hover_motion_without_a_button_does_not_select(self):
+        with mock.patch.object(self.office, "hover") as hover, \
+                mock.patch("office.clipboard.write_clipboard") as write:
+            claude_office.handle_key(self.office, f"\x1b[<35;{self.x + 1};{self.first + 1}M")
+        hover.assert_called_once()
+        write.assert_not_called()
+        self.assertIsNone(self.office.composer.selection())
+
+
+class CursorDrawTests(unittest.TestCase):
+    def test_caret_is_drawn_at_the_cursor_column(self):
+        draft = Composer()
+        draft.focus()
+        draft.insert("abc")
+        draft.move_home()
+        frame = field_snapshot(draft, 0)
+        self.assertEqual(frame.cells[TEXT_TOP_ROWS + PLATE_ROWS + 2][PAD_CELLS][1], INK_BROWN)
+        end_x = PAD_CELLS + (pixelfont.text_width("abc") + 1) // pixelfont.CELL_X
+        draft.move_end()
+        frame = field_snapshot(draft, 0)
+        self.assertEqual(frame.cells[TEXT_TOP_ROWS + PLATE_ROWS + 2][end_x][1], INK_BROWN)
+        self.assertNotEqual(frame.cells[TEXT_TOP_ROWS + PLATE_ROWS + 2][end_x],
+                            field_snapshot(draft, 4).cells[TEXT_TOP_ROWS + PLATE_ROWS + 2][end_x])
+
+    def test_visible_window_follows_the_cursor(self):
+        draft = Composer()
+        draft.focus()
+        draft.insert("word " * 60)
+        draft.move_home()
+        field_snapshot(draft)
+        self.assertEqual(draft._window, 0)
+        self.assertEqual(draft.index_at(PAD_CELLS, TEXT_TOP_ROWS + PLATE_ROWS), 0)
+        draft.move_end()
+        field_snapshot(draft)
+        self.assertGreater(draft._window, 0)
+        self.assertGreater(draft.index_at(PAD_CELLS, TEXT_TOP_ROWS + PLATE_ROWS), 0)
+
+    def test_selection_is_highlighted_only_while_focused(self):
+        draft = Composer()
+        draft.focus()
+        draft.insert("abc")
+        draft.move_home(True)
+        frame = field_snapshot(draft, 0)
+        self.assertEqual(frame.cells[TEXT_TOP_ROWS + PLATE_ROWS][PAD_CELLS][2], GOLD_FOCUSED)
+        draft.blur()
+        frame = field_snapshot(draft, 0)
+        self.assertNotEqual(frame.cells[TEXT_TOP_ROWS + PLATE_ROWS][PAD_CELLS][2], GOLD_FOCUSED)
