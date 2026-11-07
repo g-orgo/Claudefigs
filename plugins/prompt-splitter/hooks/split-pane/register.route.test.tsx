@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parseRecords, parseTickets, registeredParent, ROUTE_TTL_MS, routedTicket, unwrapEnvelope } from './register'
+import { attachmentRefusal, parseRecords, parseTickets, registeredParent, ROUTE_TTL_MS, routedTicket, unwrapEnvelope } from './register'
 
 const NOW = 1_800_000_000_000
 const ME = 'abcd1234-0000-0000-0000-000000000000'
@@ -52,4 +52,12 @@ test('messages failing any part of the check keep the default cross-session hand
 test('parseTickets skips malformed content', () => {
   expect(parseTickets('not json')).toEqual([])
   expect(parseTickets(JSON.stringify([{ from: 'a', text: 'b', at: 1 }, { from: 'a' }]))).toEqual([{ from: 'a', text: 'b', at: 1 }])
+})
+
+test('a routed prompt with attachments is refused with the title, and one without is not', () => {
+  const image = [{ type: 'image' }]
+  expect(attachmentRefusal('Filho A', image)).toContain('Filho A')
+  expect(attachmentRefusal('Filho A', image)).toContain('Imagens e anexos nao passam')
+  expect(attachmentRefusal('Filho A', undefined)).toBeUndefined()
+  expect(attachmentRefusal('Filho A', [])).toBeUndefined()
 })

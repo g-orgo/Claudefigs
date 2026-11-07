@@ -428,3 +428,149 @@ class LaunchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ImageDraftTests(unittest.TestCase):
+    def setUp(self):
+        os.makedirs(SCRATCH, exist_ok=True)
+        self.dir = tempfile.mkdtemp(dir=SCRATCH)
+        self.png = os.path.join(self.dir, "shot one.png")
+        self.jpg = os.path.join(self.dir, "b.JPG")
+        for path in (self.png, self.jpg):
+            with open(path, "wb") as handle:
+                handle.write(b"x")
+
+    def test_attach_inserts_numbered_placeholders_and_backspace_removes_whole_token(self):
+        draft = Composer()
+        draft.insert("veja")
+        self.assertTrue(draft.attach(self.png))
+        self.assertTrue(draft.attach(self.jpg))
+        self.assertEqual(draft.text, "veja [Imagem #1] [Imagem #2]")
+        draft.backspace()
+        self.assertEqual(draft.text, "veja [Imagem #1]")
+        self.assertEqual(draft.images, {1: os.path.abspath(self.png)})
+        draft.backspace()
+        self.assertEqual(draft.text, "veja")
+        self.assertEqual(draft.images, {})
+
+    def test_backspace_on_typed_text_keeps_images(self):
+        draft = Composer()
+        draft.attach(self.png)
+        draft.insert("ab")
+        draft.backspace()
+        self.assertEqual(draft.text, "[Imagem #1]a")
+        self.assertEqual(len(draft.images), 1)
+
+    def test_clear_drops_images_and_restarts_numbering(self):
+        draft = Composer()
+        draft.attach(self.png)
+        draft.clear()
+        self.assertEqual((draft.text, draft.images), ("", {}))
+        draft.attach(self.jpg)
+        self.assertEqual(draft.text, "[Imagem #1]")
+
+    def test_prompt_text_replaces_placeholders_with_absolute_mentions(self):
+        draft = Composer()
+        draft.insert("veja ")
+        draft.attach(self.png)
+        draft.insert(" e digo")
+        self.assertEqual(draft.prompt_text(), f"veja @{os.path.abspath(self.png)} e digo")
+
+    def test_image_only_draft_is_a_valid_prompt(self):
+        draft = Composer()
+        draft.attach(self.jpg)
+        self.assertEqual(draft.prompt_text(), f"@{os.path.abspath(self.jpg)}")
+
+    def test_paste_of_image_paths_attaches_them_with_quotes_uri_and_escapes(self):
+        draft = Composer()
+        draft.paste(f'"{self.png}"')
+        self.assertEqual(list(draft.images.values()), [os.path.abspath(self.png)])
+        draft = Composer()
+        uri = "file://" + self.png.replace(" ", "%20")
+        draft.paste(uri)
+        self.assertEqual(list(draft.images.values()), [os.path.abspath(self.png)])
+        draft = Composer()
+        draft.paste(self.png.replace(" ", "\\ ") + "\n" + self.jpg)
+        self.assertEqual(len(draft.images), 2)
+        self.assertEqual(draft.text, "[Imagem #1] [Imagem #2]")
+
+    def test_paste_that_is_not_only_image_files_is_inserted_as_text(self):
+        draft = Composer()
+        draft.paste(f"{self.png} and more")
+        self.assertEqual(draft.images, {})
+        self.assertEqual(draft.text, f"{self.png} and more")
+        draft = Composer()
+        draft.paste(os.path.join(self.dir, "missing.png"))
+        self.assertEqual((draft.images, draft.text), ({}, os.path.join(self.dir, "missing.png")))
+        draft = Composer()
+        draft.paste("notes.txt")
+        self.assertEqual(draft.text, "notes.txt")
+
+    def run_tool(self, outputs, fail=()):
+        """A subprocess.run stand-in: `outputs` maps the tool's argv tail to stdout, `fail` lists tools that are missing."""
+        def fake(argv, **kwargs):
+            if argv[0] in fail:
+                raise FileNotFoundError(argv[0])
+            key = " ".join(argv[1:])
+            if key not in outputs:
+                return mock.Mock(returncode=1, stdout=b"")
+            return mock.Mock(returncode=0, stdout=outputs[key])
+        return mock.patch("office.clipboard.subprocess.run", side_effect=fake)
+
+    def test_clipboard_image_is_saved_and_attached(self):
+        from office import clipboard
+        outputs = {"--list-types": b"text/html\nimage/png\n", "--type image/png": b"PNGDATA"}
+        with self.run_tool(outputs), mock.patch.object(clipboard, "IMAGE_DIR", self.dir):
+            kind, path = clipboard.read_clipboard()
+        self.assertEqual(kind, "image")
+        self.assertTrue(path.endswith(".png") and os.path.dirname(path) == self.dir)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), b"PNGDATA")
+
+    def test_clipboard_text_is_returned_when_no_image_type(self):
+        from office import clipboard
+        outputs = {"--list-types": b"text/plain\n", "--no-newline": b"hello"}
+        with self.run_tool(outputs):
+            self.assertEqual(clipboard.read_clipboard(), ("text", "hello"))
+
+    def test_missing_clipboard_tools_report_unavailable(self):
+        from office import clipboard
+        with self.run_tool({}, fail=("wl-paste", "xclip")):
+            self.assertEqual(clipboard.read_clipboard(), (clipboard.UNAVAILABLE, ""))
+
+    def test_ctrl_v_attaches_clipboard_image_and_ctrl_u_clears_it(self):
+        office = make_office()
+        claude_office.handle_key(office, "\t")
+        with mock.patch("office.office.read_clipboard", return_value=("image", self.png)):
+            claude_office.handle_key(office, "\x16")
+        self.assertEqual(office.composer.text, "[Imagem #1]")
+        claude_office.handle_key(office, "\x15")
+        self.assertEqual((office.composer.text, office.composer.images), ("", {}))
+
+    def test_ctrl_v_without_tools_notifies_the_user(self):
+        office = make_office()
+        claude_office.handle_key(office, "\t")
+        with mock.patch("office.office.read_clipboard", return_value=("unavailable", "")), \
+                mock.patch.object(office, "notify") as notify:
+            claude_office.handle_key(office, "\x16")
+        notify.assert_called_once_with("Area de transferencia indisponivel")
+        self.assertEqual(office.composer.text, "")
+
+    def test_submit_sends_prompt_text_with_mentions(self):
+        sent = []
+        def sender(argv, cwd):
+            sent.append(argv)
+            return 0, ""
+        office = make_office(sender=sender)
+        office.set_workers([make_worker("done", "/work/project")])
+        office.press()
+        office.composer.focus()
+        office.composer.insert("olhe ")
+        office.composer.attach(self.png)
+        with mock.patch("office.office.full_session_id", return_value=FULL_ID):
+            office.submit()
+            wait_result(office)
+            office.drain()
+        self.assertEqual(sent[-1][-1], f"olhe @{os.path.abspath(self.png)}")
+        self.assertEqual(office.composer.text, "")
+        self.assertEqual(office.composer.images, {})

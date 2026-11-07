@@ -1,7 +1,12 @@
 """The writing field of the office: a text draft, and the chunky pixel-art dialog box that draws it."""
+import os
+import re
 from functools import lru_cache
 
 from . import pixelfont
+from .clipboard import image_paths_from_paste
+from . import suggest
+from .suggest import matches
 from .sprites import Canvas
 from .term import Frame
 
@@ -30,6 +35,9 @@ BORDER_PX = 3
 TEXT_TOP_ROWS = 2  # rows from the box's top edge to the first line of text.
 PAD_CELLS = 6  # cells from the box's left edge to the text.
 CARET = "_"
+POPUP_ROWS = 5  # most suggestions shown above the box.
+PLACEHOLDER_RE = re.compile(r"\[Imagem #(\d+)\]")
+PLACEHOLDER_TAIL_RE = re.compile(r"\[Imagem #(\d+)\]$")
 # Pixels cut from the first rows of each corner, per ring of the border.
 RINGS = ((0, (3, 1, 1)), (1, (2, 1)), (2, (1,)), (3, (1,)))  # (inset, cuts) from the outside in.
 
@@ -39,6 +47,11 @@ class Composer:
         self.text = ""
         self.focused = False
         self.hovered = False  # the pointer is over the box; hover never gives focus.
+        self.images: dict[int, str] = {}  # placeholder number -> absolute image path, for this draft.
+        self.spaced: set[int] = set()  # placeholders that got a separator space from attach(), removed with them.
+        self.highlight = 0  # index of the highlighted suggestion.
+        self._highlight_text = ""  # the draft the highlight belongs to; a new draft starts at the top.
+        self.dismissed: str | None = None  # the draft whose popup Esc closed; it stays closed until the draft changes.
 
     def focus(self) -> None:
         self.focused = True
@@ -48,6 +61,7 @@ class Composer:
 
     def insert(self, string: str) -> None:
         """Adds text at the end; line breaks and tabs become one space and other control characters are dropped."""
+        self.dismissed = None
         out = []
         for ch in string:
             if ch in "\r\n\t":
@@ -56,11 +70,105 @@ class Composer:
                 out.append(ch)
         self.text = (self.text + "".join(out))[:MAX_TEXT]
 
+    def paste(self, string: str) -> None:
+        """A paste of image file paths attaches those images; any other paste is inserted as text."""
+        paths = image_paths_from_paste(string)
+        if paths is None:
+            self.insert(string)
+            return
+        for path in paths:
+            self.attach(path)
+
+    def attach(self, path: str) -> bool:
+        """Adds an image placeholder at the end; returns False when the draft has no room left for it."""
+        self.dismissed = None
+        token = f"[Imagem #{max(self.images, default=0) + 1}]"
+        number = max(self.images, default=0) + 1
+        sep = " " if self.text and not self.text.endswith(" ") else ""
+        if len(self.text) + len(sep) + len(token) > MAX_TEXT:
+            return False
+        self.text += sep + token
+        self.images[number] = os.path.abspath(path)
+        if sep:
+            self.spaced.add(number)
+        return True
+
     def backspace(self) -> None:
+        """Removes the last character, or the whole placeholder and its image when the text ends with one."""
+        self.dismissed = None
+        tail = PLACEHOLDER_TAIL_RE.search(self.text)
+        if tail and int(tail.group(1)) in self.images:
+            number = int(tail.group(1))
+            start = tail.start() - 1 if number in self.spaced and tail.start() > 0 else tail.start()
+            del self.images[number]
+            self.spaced.discard(number)
+            self.text = self.text[:start]
+            return
         self.text = self.text[:-1]
 
+    def prompt_text(self) -> str:
+        """The draft as sent to Claude: each placeholder becomes an `@<absolute path>` mention."""
+        def mention(match: re.Match) -> str:
+            path = self.images.get(int(match.group(1)))
+            return f"@{path}" if path else match.group(0)
+        return PLACEHOLDER_RE.sub(mention, self.text)
+
+    def trigger(self) -> tuple[str, str, int] | None:
+        """(kind, query, start) of the token being typed: a slash command at the very start, or an @ token at the end."""
+        if self.text.startswith("/") and " " not in self.text:
+            return "command", self.text[1:], 0
+        match = re.search(r"(?:^|\s)@(\S*)$", self.text)
+        if match:
+            return "file", match.group(1), match.start(1) - 1
+        return None
+
+    def suggestions(self, cwd: str) -> list[tuple[str, str, str]]:
+        """Up to POPUP_ROWS items as (label, text to insert, description); empty when no token is open or Esc closed it."""
+        trig = self.trigger()
+        if trig is None or self.dismissed == self.text:
+            return []
+        if self._highlight_text != self.text:  # a new query starts at the top of the list.
+            self.highlight, self._highlight_text = 0, self.text
+        kind, query, _ = trig
+        if kind == "command":
+            return [(f"/{name}", f"/{name} ", desc) for name, desc in matches(suggest.commands(cwd), query, POPUP_ROWS)]
+        return [(rel, f"@{rel} ", "") for rel in suggest.files(cwd, query, POPUP_ROWS)]
+
+    def move(self, delta: int, cwd: str) -> None:
+        count = len(self.suggestions(cwd))
+        if count:
+            self.highlight = (self.highlight + delta) % count
+
+    def accept(self, cwd: str, index: int | None = None) -> bool:
+        """Replaces the open token with the suggestion (the highlighted one, or `index`); False when nothing is open."""
+        items = self.suggestions(cwd)
+        if not items:
+            return False
+        if index is not None and 0 <= index < len(items):
+            self.highlight = index
+        trig = self.trigger()
+        self.text = self.text[:trig[2]] + items[self.highlight][1]
+        self.dismissed = None
+        return True
+
+    def dismiss(self, cwd: str) -> bool:
+        """Esc closes the popup and keeps the draft; False when no popup was open."""
+        if not self.suggestions(cwd):
+            return False
+        self.dismissed = self.text
+        return True
+
+    def state(self) -> tuple[str, dict[int, str], set[int]]:
+        return self.text, dict(self.images), set(self.spaced)
+
+    def restore(self, state: tuple[str, dict[int, str], set[int]]) -> None:
+        self.text, self.images, self.spaced = state[0], dict(state[1]), set(state[2])
+
     def clear(self) -> None:
+        self.dismissed = None
         self.text = ""
+        self.images = {}
+        self.spaced = set()
 
 
 def field_geometry(cols: int, room: int | None = None) -> tuple[int, int]:
@@ -107,6 +215,39 @@ def _plate(canvas: Canvas, x: int, width: int, focused: bool) -> None:
     height = PLATE_ROWS * 2 + 1
     _rounded(canvas, x, 0, width, height, OUTLINE, (1,))
     _rounded(canvas, x + 1, 1, width - 2, height - 1, fill, ())
+
+
+POPUP_RINGS = ((0, (2, 1)), (1, (1,)), (2, ()))  # (inset, cuts) of outline, wood and parchment, outside in.
+
+
+def draw_popup(frame: Frame, col: int, top: int, width: int, items: list[tuple[str, str, str]], highlight: int) -> None:
+    """Suggestion list framed like the box: outline, wood and parchment, with a border row above and below the items.
+    The first item sits one row under `top`, which is the top border row."""
+    if not items or width < 2 * PAD_CELLS:
+        return
+    canvas = Canvas(width, (len(items) + 2) * 2, None)
+    for (inset, cuts), color in zip(POPUP_RINGS, (OUTLINE, WOOD, PARCHMENT)):
+        _rounded(canvas, inset, inset, width - 2 * inset, canvas.height - 2 * inset, color, cuts)
+    overlay(frame, canvas, col, top)
+    for i, (label, _insert, desc) in enumerate(items):
+        row = top + 1 + i
+        if not 0 <= row < frame.nrows:
+            continue
+        selected = i == highlight
+        bg = GOLD_FOCUSED if selected else PARCHMENT
+        cells = frame.cells[row]
+        for x in range(col + 2, min(col + width - 2, frame.cols)):
+            cells[x] = (" ", None, bg, False)
+        room = width - 2 * PAD_CELLS
+        if len(label) > room:  # file paths lose their start, so the name at the end stays readable.
+            label = "..." + label[-(room - 3):]
+        for k, ch in enumerate(label[:room]):
+            if col + PAD_CELLS + k < frame.cols:
+                cells[col + PAD_CELLS + k] = (ch, INK_BROWN, bg, selected)
+        start = PAD_CELLS + len(label) + 2
+        for k, ch in enumerate(desc[: max(0, width - start - PAD_CELLS)]):
+            if col + start + k < frame.cols:
+                cells[col + start + k] = (ch, INK_BROWN if selected else FADED, bg, False)
 
 
 def overlay(frame: Frame, canvas: Canvas, col: int, top: int) -> None:

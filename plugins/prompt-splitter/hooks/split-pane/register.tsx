@@ -325,6 +325,12 @@ async function addTicket($: Dollar, target: string, ticket: RouteTicket): Promis
   }
 }
 
+// session.send carries text only, so a routed prompt with images or other attachments is refused instead of losing them.
+export function attachmentRefusal(title: string, attachments: readonly unknown[] | undefined): string | undefined {
+  if (attachments === undefined || attachments.length === 0) return undefined
+  return `Imagens e anexos nao passam para ${title} pelo painel: use @caminho no texto ou a caixa do escritorio (claude split)`
+}
+
 // Keeps the last record of each (group, index) slot, the one appended later; records without index are all kept.
 function lastPerSlot<T extends SplitRecord>(group: T[]): T[] {
   const slots = new Map<number, T>()
@@ -1087,6 +1093,12 @@ export const register: Register = on => {
       if (target === undefined) {
         $.ui.toast('Sessao de destino ainda nao identificada: prompt mantido aqui')
         return next(e)
+      }
+      const refusal = attachmentRefusal(title, e.attachments)
+      if (refusal !== undefined) {
+        // The typed text goes back into the box; the images stay with the person and are not sent.
+        void $.prompt.fill({ text: e.text }).catch(() => {})
+        return { drop: refusal }
       }
       // The ticket lets the receiving child take the prompt as the person's own (see session.receive below).
       await addTicket($, target, { from: me, text: e.text, at: await $.clock.now() })

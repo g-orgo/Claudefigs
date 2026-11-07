@@ -107,6 +107,11 @@ def handle_key(scene, key: str) -> None:
             return
         if not pressed:
             return
+        if button == LEFT_BUTTON and composer is not None and composer.focused:
+            index = scene.popup_row_at(col, row)
+            if index is not None:
+                scene.popup_accept(index)  # a click on a suggestion row takes it, without leaving the field.
+                return
         if button == LEFT_BUTTON and composer is not None:
             if scene.in_composer(col, row):
                 composer.focus()
@@ -126,13 +131,21 @@ def handle_key(scene, key: str) -> None:
                 open_session(scene, worker)
     elif composer is not None and composer.focused:
         if key in ("\r", "\n"):
-            scene.submit()
+            if not scene.popup_accept():  # with a suggestion open, Enter takes it instead of sending.
+                scene.submit()
+        elif key == "\t":
+            scene.popup_accept()
+        elif key in ("\x1b[A", "\x1b[B"):
+            scene.popup_move(-1 if key == "\x1b[A" else 1)  # the popup takes the arrows; the chat never scrolls here.
         elif key == "\x1b":
-            composer.blur()  # keeps the draft; a later Esc goes back as usual.
+            if not scene.popup_dismiss():  # Esc closes the popup first, then leaves the field; the draft stays.
+                composer.blur()
         elif key in ("\x7f", "\b"):
             composer.backspace()
         elif key == "\x15":
             composer.clear()
+        elif key == "\x16":
+            scene.paste_clipboard()
         elif len(key) == 1 and key.isprintable():
             composer.insert(key)
     elif key == "\t" and composer is not None and scene.composer_shown():

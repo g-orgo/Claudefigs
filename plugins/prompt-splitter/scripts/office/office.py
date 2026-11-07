@@ -11,7 +11,8 @@ import time
 
 from . import hallart, life, props, sprites
 from .bubble import clean
-from .composer import BACK_H, BACK_W, MIN_ROWS, Composer, draw_back_button, draw_composer, field_geometry, panel_rows
+from .clipboard import UNAVAILABLE, read_clipboard
+from .composer import BACK_H, BACK_W, MIN_ROWS, POPUP_ROWS, Composer, draw_back_button, draw_composer, draw_popup, field_geometry, panel_rows
 from .data import full_session_id
 from .hall import BACK, WAREHOUSE, Hall, doors_of
 from .hallart import BAY_W
@@ -159,8 +160,16 @@ class Office:
             if frame.nrows < self.rows:
                 frame = self._with_strip(frame)
             col, top, width, rows = self.field_rect()
-            hints = ("Enter envia  Esc sai", "Enter envia") if self.composer.focused else ("Tab escreve",) if self.composer.text else ()
+            hints = (
+                ("@ arquivo  / comando  Ctrl+V imagem  Enter envia  Esc sai", "@ arquivo  / comando  Enter envia", "Enter envia  Esc sai", "Enter envia")
+                if self.composer.focused else ("Tab escreve",) if self.composer.text else ()
+            )
             draw_composer(frame, top, col, width, rows, self.composer, self._destination(), hints, self.tick)
+            items = self.popup_items()
+            rect = self.popup_rect(len(items))
+            if rect is not None:
+                left, popup_top, popup_w, count = rect
+                draw_popup(frame, left, popup_top, popup_w, items[:count], self.composer.highlight)
         button = self.back_button()
         if button is not None:
             col, row, _, _ = button
@@ -222,10 +231,56 @@ class Office:
             return f"Para: {clean(worker.title)}" if worker else "Selecione um item"
         return "Nova sessão"
 
+    def _suggest_cwd(self) -> str:
+        """Directory the suggestions come from: the selected worker's in a room, the viewer's otherwise."""
+        worker = self.scene.selected() if self.mode == "room" else None
+        return worker.cwd if worker is not None and worker.cwd else os.getcwd()
+
+    def popup_items(self) -> list[tuple[str, str, str]]:
+        return self.composer.suggestions(self._suggest_cwd()) if self.composer.focused else []
+
+    def popup_rect(self, count: int) -> tuple[int, int, int, int] | None:
+        """(left, top border row, width, items) of the suggestion popup: the box's width, one gap row above the box,
+        and two border rows around the items; never over the view's top edge."""
+        if not count or not self.composer_shown():
+            return None
+        left, top, width, _ = self.field_rect()
+        shown = min(POPUP_ROWS, count, top - 3)
+        return (left, top - shown - 3, width, shown) if shown > 0 else None
+
+    def popup_row_at(self, col: int, row: int) -> int | None:
+        rect = self.popup_rect(len(self.popup_items()))
+        if rect is None:
+            return None
+        left, top, width, items = rect
+        inside = left <= col < left + width and top + 1 <= row <= top + items
+        return row - top - 1 if inside else None
+
+    def popup_move(self, delta: int) -> None:
+        self.composer.move(delta, self._suggest_cwd())
+
+    def popup_accept(self, index: int | None = None) -> bool:
+        return self.composer.accept(self._suggest_cwd(), index)
+
+    def popup_dismiss(self) -> bool:
+        return self.composer.dismiss(self._suggest_cwd())
+
     def paste(self, text: str) -> None:
         """A bracketed paste lands as one insert, and only while the field has focus."""
         if self.composer.focused:
-            self.composer.insert(text)
+            self.composer.paste(text)
+
+    def paste_clipboard(self) -> None:
+        """Ctrl+V while the field has focus: attaches a clipboard image, or inserts clipboard text."""
+        if not self.composer.focused:
+            return
+        kind, value = read_clipboard()
+        if kind == "image":
+            self.composer.attach(value)
+        elif kind == "text":
+            self.composer.paste(value)
+        elif kind == UNAVAILABLE:
+            self.notify("Area de transferencia indisponivel")
 
     def submit(self) -> None:
         """Sends the draft: to the selected split inside a room, or as a new session in the hall and warehouse."""
@@ -235,7 +290,8 @@ class Office:
         if self.inflight:
             self.notify("Aguarde o envio anterior")
             return
-        prompt = " " + text if text.startswith("-") else text
+        prompt = self.composer.prompt_text()
+        prompt = " " + prompt if prompt.startswith("-") else prompt
         plan = None
         room: dict = {}
         if self.mode == "room":
@@ -267,7 +323,7 @@ class Office:
             plan = self._write_plan(title, prompt)
             argv = [sys.executable, DISPATCH, plan]
         self.inflight = True
-        job = {"kind": kind, "text": text, "title": title, "plan": plan, **room}
+        job = {"kind": kind, "draft": self.composer.state(), "title": title, "plan": plan, **room}
         threading.Thread(target=self._run, args=(job, argv, cwd), daemon=True).start()
 
     def _write_plan(self, title: str, prompt: str) -> str:
@@ -313,7 +369,7 @@ class Office:
             if not ok:
                 self.notify("Nao foi possivel enviar")
                 if not self.composer.text:
-                    self.composer.text = job["text"]
+                    self.composer.restore(job["draft"])
                 continue
             self.composer.clear()
             if job["kind"] == "hall":
