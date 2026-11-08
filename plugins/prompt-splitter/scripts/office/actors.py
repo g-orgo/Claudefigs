@@ -144,11 +144,11 @@ class Actor:
         x, y = self.desk
         pose, eyes, _, screen = self.appearance(tick)
         hx, hy = self.head()
-        props.draw_chair(canvas, x, y, self.kit)
+        props.soft_piece(canvas, props.draw_chair, x, y, self.kit)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "back", eyes=eyes)
-        props.draw_desk(canvas, x, y, self.kit)
-        props.draw_monitor(canvas, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle", kit=self.kit)
+        props.soft_piece(canvas, props.draw_desk, x, y, self.kit)
+        props.soft_piece(canvas, props.draw_monitor, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle", kit=self.kit)
         deskitems.draw_items(canvas, x, y, self.kit, self.seed, tick)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "front", eyes=eyes)

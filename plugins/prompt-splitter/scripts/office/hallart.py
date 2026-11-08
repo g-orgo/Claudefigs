@@ -154,51 +154,26 @@ def draw_door_selection(canvas: Canvas, panel) -> None:
             canvas.put(panel.x + c, r, WHITE)
 
 
-def _iso_box(canvas: Canvas, bx: int, by: int, w: int, d: int, h: int, color: Color) -> tuple:
-    """A 2:1 box standing on (bx, by), its bottom back vertex; lit top, mid left face, dark right face, outlined."""
-    from .props import fill_poly
-    ty = by - h
-    back, right, left = (bx, ty), (bx + 2 * w, ty + w), (bx - 2 * d, ty + d)
-    front = (bx + 2 * w - 2 * d, ty + w + d)
-    fill_poly(canvas, [left, front, (front[0], front[1] + h), (left[0], left[1] + h)], shade(color, 0.86))
-    fill_poly(canvas, [front, right, (right[0], right[1] + h), (front[0], front[1] + h)], shade(color, 0.66))
-    fill_poly(canvas, [back, right, front, left], shade(color, 1.1))
-    for t in range(1, 2 * d - 1):  # bright rim on the top's front-left edge.
-        canvas.put(left[0] + t, left[1] + t // 2, shade(color, 1.25))
-    return back, right, front, left
-
-
 def draw_table(canvas: Canvas, x: int, y: int, tick: int, selected: bool) -> None:
-    """The central counter in 2:1 isometry: red parcel to the warehouse, coffee machine with a green led, plant and
-    water cooler, all shaded with a lit top, a mid left face and a dark right face."""
-    from .props import _shade_area
-    _shade_area(canvas, [(x + 4, y + 30), (x + 34, y + 36), (x + 58, y + 26), (x + 30, y + 18)], 0.8)  # floor shadow
-    cooler = (232, 236, 244)
-    _iso_box(canvas, x + 52, y + 26, 3, 3, 14, cooler)  # cooler body, behind the counter's right end.
-    _iso_box(canvas, x + 52, y + 12, 3, 3, 8, (150, 214, 248))  # bottle
-    level = 1 + (tick // 90) % 5
-    for t in range(level):
-        canvas.put(x + 51, y + 9 - t, (205, 236, 252))
-        canvas.put(x + 52, y + 9 - t, (205, 236, 252))
-    canvas.put(x + 48, y + 21, (90, 150, 230))
-    canvas.put(x + 50, y + 22, (235, 90, 90))
-    _iso_box(canvas, x + 22, y + 13, 14, 8, 7, (196, 150, 108))  # counter
+    """The central table: red parcel to the warehouse, coffee machine with a green led, plant and water cooler."""
+    box(canvas, x + 2, y + 17, 42, 18, (196, 150, 108))
+    box(canvas, x, y + 14, 46, 4, (234, 226, 214))
     parcel = (240, 90, 90) if not selected else (255, 130, 110)
-    back, right, front, left = _iso_box(canvas, x + 16, y + 13, 3, 3, 6, parcel)
-    for t in range(0, 6):  # ribbon across the parcel's top.
-        canvas.put(left[0] + 3 + t, left[1] - 1 + t // 2, (250, 214, 150))
-    back, right, front, left = _iso_box(canvas, x + 28, y + 12, 3, 3, 11, (72, 76, 96))  # coffee machine
-    for t in range(4):
-        canvas.put(left[0] + 1 + t, left[1] + 3 + t // 2, (120, 220, 200))  # screen on the lit face
+    box(canvas, x + 2, y + 7, 10, 8, parcel)
+    rect(canvas, x + 6, y + 8, 2, 6, (250, 214, 150))
+    box(canvas, x + 15, y + 2, 13, 13, (72, 76, 96))
+    box(canvas, x + 17, y + 4, 7, 3, (120, 220, 200))
+    box(canvas, x + 18, y + 9, 5, 4, (250, 250, 250))
     led = (90, 240, 130) if (tick // 6) % 2 else (40, 110, 70)
-    canvas.put(front[0] + 2, front[1] + 2, led)
-    canvas.put(left[0] + 2, left[1] + 7, (250, 250, 250))  # cup slot
-    canvas.put(left[0] + 3, left[1] + 8, (250, 250, 250))
-    _iso_box(canvas, x + 40, y + 17, 3, 3, 4, (200, 130, 90))  # plant pot
+    rect(canvas, x + 25, y + 4, 2, 2, led)
+    box(canvas, x + 32, y + 8, 8, 7, (200, 130, 90))
     for dx, dy in ((-3, -3), (0, -6), (4, -5), (7, -3), (2, -3)):
-        rect(canvas, x + 37 + dx, y + 13 + dy, 4, 3, (92, 186, 118))
-        canvas.put(x + 37 + dx, y + 13 + dy, (140, 220, 150))
-        canvas.put(x + 40 + dx, y + 15 + dy, (60, 140, 90))
+        rect(canvas, x + 34 + dx, y + 8 + dy, 4, 3, (92, 186, 118))
+    box(canvas, x + 48, y + 21, 11, 14, (232, 236, 244))
+    box(canvas, x + 49, y + 7, 9, 15, (150, 214, 248))
+    rect(canvas, x + 50, y + 8, 7, 7 + (tick // 90) % 5, (205, 236, 252))
+    rect(canvas, x + 50, y + 26, 3, 2, (90, 150, 230))
+    rect(canvas, x + 55, y + 26, 3, 2, (235, 90, 90))
 
 
 def draw_side_walls(canvas: Canvas, plan) -> None:

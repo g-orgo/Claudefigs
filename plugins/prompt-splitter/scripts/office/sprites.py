@@ -52,20 +52,21 @@ LOOKS = [
 ]
 
 # Head in a 3/4 view turned toward the monitor on the left: the far side (right) is in shade and shows an ear.
+# Head turned to the left, toward the monitor: features sit on the left half, the right half is nape and ear.
 HEAD = [
-    "....oooooooo....", "..oossssssssoo..", ".osssssssssssSo.", ".osssssssssssSo.", ".ossssssssssSSo.",
-    ".ossssssssssSSoo", ".ossssssssssSSOo", ".ossssssssssSSoo", ".osssssssssSSSo.",
+    "....oooooooo....", "..oossssssssoo..", ".osssssssssssSo.", ".osssssssssssSo.", "ossssssssssssSo.",
+    "osssssssssSSoSo.", "osssssssssSSSSo.", ".ossssssssSSoSo.", ".osssssssssSSSo.",
     "..osssssssssSSo.", "...oosssssSSoo..", ".....oooooo.....",
 ]
-# Eye expressions as (row, text) overlays on the head; the near eye is wider than the far one.
+# Eye expressions as (row, text) overlays; the far eye is a narrow sliver, the near one is full.
 EYES = {
-    "open": [(5, "..eW.....eW....."), (6, "..ee.....ee....."), (7, "..ei.....ei.....")],
-    "blink": [(6, "..ee.....ee.....")],
-    "happy": [(5, "..ee.....ee....."), (6, ".e..e...e..e....")],
-    "down": [(6, "..eW.....eW....."), (7, "..ee.....ee.....")],
-    "right": [(5, "...eW.....eW...."), (6, "...ee.....ee...."), (7, "...ei.....ei....")],
+    "open": [(5, ".eW...ei........"), (6, ".ee...e........."), (7, ".ei.............")],
+    "blink": [(6, ".ee...e.........")],
+    "happy": [(5, ".ee...e........."), (6, "e..e..e.........")],
+    "down": [(6, ".eW...e........."), (7, ".ee.............")],
+    "right": [(5, "..eW...e........"), (6, "..ee...e........"), (7, "..ei............")],
 }
-CHEEKS = (8, ".bb...mm...bS...")
+CHEEKS = (8, ".bbm..bb........")
 GLASSES = [(4, "..ooooo..ooooo.."), (5, "..o...o..o...o.."), (6, "..o...oooo...o.."), (7, "..o...o..o...o..")]
 
 # Hair rows start 2 rows above the head and 2 columns left of it.
@@ -91,13 +92,13 @@ HAIR = {
             ".oooKKKKKKKKKKKKKo", ".oKKKKKKKKKKKKKKKo", "...oh..........ho"],
 }
 
-SHOULDERS = "...oottkkttoo..."
-TORSO = ["..otttttkktttto."[:3] + "ttttkktttt" + "o..", "..otTttkkttTto..", "..otTttKKttTto.."]
-ARMS_DOWN = ["..osottKKttoso..", "...oottKKttoo..."]
+SHOULDERS = "...ootkktttoo..."
+TORSO = ["..ottkktttttto..", "..ottkkttttTTo..", "..ottKKttttTTo.."]
+ARMS_DOWN = ["..osotKKtttoso..", "...ootKKtttoo..."]
 LEGS = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "....oppooppo....", "...offfoofffo...", "...oooo..oooo..."]
 STEP_A = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "....oppoofffo...", "...offfooooo....", "...oooo........."]
 STEP_B = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "...offfooppo....", "....ooooofffo...", ".........oooo..."]
-LOW = ["..otTotKKtoTto..", "..otoTtKKtToto..", "...otoTTTToto..."]
+LOW = ["..otToKKttoTto..", "..otoKKttTToto..", "...otoTTTToto..."]
 
 # name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx).
 # Body rows from index FRONT_ROW on are drawn after the desk, resting on it.
@@ -116,6 +117,8 @@ CUP_LOW = (3, 12, ["oooo.", "occoo", "occ.o", "oooo."])
 PHONE = (-6, 14, ["ooo", "ono", "ono", "oso", "oTo", "oTo", "oto"])
 CHIN = (-1, 11, ["oso", "oso", "oTo", "oTo", "oTo", "oTo", "oTo", "oto", ".o."])
 sit = [SHOULDERS, *TORSO, *LOW[:2]]
+# The hair seen from the turned angle: past column 10 (the nape) the bangs' skin gaps are filled with hair.
+TURNED_HAIR = {name: [row[:10] + row[10:].replace("s", "h") for row in rows] for name, rows in HAIR.items()}
 standing = [SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS]
 HAND = (2, 12, ["oso", "oTo"])
 REST = [ARM_L, ARM_R]
@@ -147,6 +150,23 @@ def _tone(color: Color, factor: float) -> Color:
     return tuple(max(0, min(255, int(c * factor))) for c in color)
 
 
+def soften_lines(px: dict) -> dict:
+    """Selective outline: an outline pixel with drawn pixels on all four sides is an inner line, so it takes a dark tone
+    of the fill around it; the silhouette keeps the full dark outline."""
+    out = dict(px)
+    for (x, y), color in px.items():
+        if color != OUTLINE:
+            continue
+        around = [px.get(p) for p in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1))]
+        if None in around:
+            continue
+        fills = [c for c in around if c != OUTLINE]
+        if fills:
+            base = max(set(fills), key=fills.count)
+            out[(x, y)] = _tone(base, 0.62)
+    return out
+
+
 class _Layer:
     """Collects one character's pixels so they can be shaded as a whole before reaching the canvas."""
 
@@ -159,7 +179,7 @@ class _Layer:
     def flush(self, canvas: Canvas) -> None:
         """Light from the top-left: a fill pixel touching the outline (or the edge) on its right or below gets a shade
         tone, one touching it on its left or above gets a highlight, which gives every pose a rounded volume."""
-        px = self.px
+        px = soften_lines(self.px)
         for (x, y), color in px.items():
             if color != OUTLINE:
                 right, below = px.get((x + 1, y), OUTLINE), px.get((x, y + 1), OUTLINE)
@@ -203,7 +223,7 @@ def _draw_head(canvas: Canvas, x: int, y: int, look: Look, pal: dict, dy: int, m
     if look.glasses:
         for row, text in GLASSES:
             _stamp(canvas, x, y + dy + row, [text.replace(" ", ".")], pal, flip)
-    _stamp(canvas, x - 2, y + dy - 2, HAIR[look.hair_style], pal, flip, 19)
+    _stamp(canvas, x - 2, y + dy - 2, TURNED_HAIR[look.hair_style], pal, flip, 19)
 
 
 def _draw_arms(canvas: Canvas, x: int, y: int, arms: list, pal: dict, flip: bool) -> None:

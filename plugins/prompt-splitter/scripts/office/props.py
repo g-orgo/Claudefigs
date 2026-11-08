@@ -1,7 +1,7 @@
 """Isometric furniture, room and small effect icons of the office viewer."""
 from dataclasses import dataclass
 
-from .sprites import Canvas, Color
+from .sprites import Canvas, Color, soften_lines
 
 OUTLINE: Color = (46, 34, 58)
 WOOD, WOOD_L, WOOD_R = (232, 190, 140), (190, 140, 96), (160, 112, 78)
@@ -189,7 +189,7 @@ def _screen_pixels(canvas: Canvas, mx: int, my: int, cols: int, height: int, slo
             if rows and row % 2 == 0:
                 line = (row // 2 + tick // 3)
                 width = 3 + (line * 7) % 8
-                if col < width:
+                if cols - 1 - col < width:  # col 0 is the rightmost column: lines start at the left like text.
                     color = rows[line % len(rows)]
             elif rows and col + row == cols - 1:
                 color = tuple(min(255, c + 34) for c in bg)  # diagonal glare over a lit screen.
@@ -386,3 +386,24 @@ def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
     for y in range(y0, y1 + 1):
         canvas.put(x0, y, OUTLINE)
         canvas.put(x1, y, OUTLINE)
+
+
+class _Recorder:
+    """Stands in for the canvas while one furniture piece draws, remembering which pixels it painted."""
+
+    def __init__(self, canvas: Canvas):
+        self.canvas, self.width, self.height, self.rows = canvas, canvas.width, canvas.height, canvas.rows
+        self.px: dict[tuple[int, int], Color] = {}
+
+    def put(self, x: int, y: int, color: Color) -> None:
+        if 0 <= x < self.width and 0 <= y < self.height:
+            self.px[(x, y)] = color
+            self.rows[y][x] = color
+
+
+def soft_piece(canvas: Canvas, draw, *args, **kwargs) -> None:
+    """Draws one piece with draw(recorder, ...) and turns its inner outlines into dark tones of their fills."""
+    rec = _Recorder(canvas)
+    draw(rec, *args, **kwargs)
+    for (x, y), color in soften_lines(rec.px).items():
+        canvas.rows[y][x] = color
