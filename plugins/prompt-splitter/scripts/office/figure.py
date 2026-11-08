@@ -19,13 +19,13 @@ def _hair_cells(style: str) -> set:
     cx, cy = HEAD_C
     crown = ellipse(cx + 0.5, cy - 1.5, 12.5, 11.5)
     fringe = {  # lowest hair row over the forehead, per column: each cut has its own fringe.
-        "neat": lambda x: 9 + max(0, (13 - x) // 3),  # side-swept toward the face edge
-        "bob": lambda x: 11,
-        "spiky": lambda x: 9 + (2 if x % 4 == 1 else 0),
-        "ponytail": lambda x: 7 + (1 if x > 12 else 0),
-        "bun": lambda x: 7,
-        "curly": lambda x: 10,
-        "long": lambda x: 8 if 9 <= x <= 13 else 10,  # middle part
+        "neat": lambda x: 11 + max(0, (13 - x) // 4),  # side-swept toward the face edge
+        "bob": lambda x: 12,
+        "spiky": lambda x: 11 + (1 if x % 4 == 1 else 0),
+        "ponytail": lambda x: 10 + (1 if x > 12 else 0),
+        "bun": lambda x: 10,
+        "curly": lambda x: 11,
+        "long": lambda x: 10 if 9 <= x <= 13 else 12,  # middle part
         "cap": lambda x: 9,
     }[style]
     cells = {(x, y) for x, y in crown if y <= fringe(x) or x > 19 and y < 21}
@@ -39,7 +39,7 @@ def _hair_cells(style: str) -> set:
     elif style == "bun":
         cells |= ellipse(21, 0, 5.5, 4.5)
     elif style == "curly":
-        cells = {(x, y) for x, y in ellipse(cx + 0.5, cy - 1, 14.5, 13) if y < 10 or x > 18 and y < 24 or x < 5 and y < 18}
+        cells = {(x, y) for x, y in ellipse(cx + 0.5, cy - 1, 14.5, 13) if y < 12 or x > 18 and y < 24 or x < 5 and y < 18}
     elif style == "long":
         cells |= polygon([(19, 8), (29, 10), (30, 40), (26, 46), (20, 42), (21, 22)]) | {(x, y) for x, y in crown if x < 6 and y < 22}
     elif style == "cap":
@@ -59,15 +59,15 @@ def _hair_fill(style: str):
 
 EYE_ROW = 15
 NEAR_EYE = ("eeW", "eie", "eee")  # 3x3: lash row with the catch light, iris, lower lid.
-FAR_EYE = ("e", "e", "e")  # the far eye is foreshortened to a single column.
+FAR_EYE = ("ee", "ie", "ee")  # the far eye is foreshortened: narrower, no catch light.
 
 
 def _face(g: Grid, mood: str, dy: int, glasses: bool) -> None:
-    """Far eye (left) foreshortened, near eye with iris and catch light, brows, nose shade, lips, blush, ear on the right."""
+    """Far eye (left) foreshortened, near eye with iris and catch light, nose shade, lips, blush, ear on the right."""
     row = EYE_ROW + dy + (1 if mood == "down" else 0)
     shift = 1 if mood == "right" else 0
     put = lambda x, y, c: g.px.__setitem__((x, y), c)
-    for ex, eye in ((7, FAR_EYE), (13, NEAR_EYE)):
+    for ex, eye in ((8, FAR_EYE), (13, NEAR_EYE)):
         x0, w = ex + shift, len(eye[0])
         if mood in ("blink", "happy"):
             for i in range(-1 if w > 1 else 0, w + 1 if w > 1 else 1):
@@ -77,39 +77,31 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool) -> None:
             for j, line in enumerate(eye):
                 for i, c in enumerate(line):
                     put(x0 + i, row + j, c)
-    brow = row - 2 - (1 if mood == "happy" else 0)
-    for x in (6, 7, 13, 14, 15):  # brows in the hair's dark tone.
-        put(x + shift, brow + (1 if x == 15 else 0), "d")
-    put(10, 17 + dy, "S")  # nose: a shaded ridge ending in a nostril shadow.
-    put(10, 18 + dy, "S")
-    put(10, 19 + dy, "O")
-    put(11, 19 + dy, "S")
+    put(11, 18 + dy, "S")  # nose: a short shaded ridge ending in a nostril shadow.
+    put(11, 19 + dy, "O")
+    put(12, 19 + dy, "S")
     if mood == "happy":
-        for x, y in ((8, 21), (9, 22), (10, 22), (11, 22), (12, 21)):
+        for x, y in ((9, 21), (10, 22), (11, 22), (12, 22), (13, 21)):
             put(x, y + dy, "m")
-        put(10, 23 + dy, "b")
     else:
-        put(8, 22 + dy, "O")  # mouth corner
-        put(9, 22 + dy, "m")
+        put(9, 22 + dy, "O")  # mouth corner
         put(10, 22 + dy, "m")
         put(11, 22 + dy, "m")
-        put(10, 23 + dy, "b")  # lower lip catches the light
-        put(11, 23 + dy, "S")
+        put(12, 22 + dy, "m")
     put(15, 19 + dy, "b")
     put(16, 19 + dy, "b")
     put(19, 25 + dy, "S")  # jaw shade under the cheek
     put(20, 24 + dy, "S")
     if glasses:  # two rims around the eyes joined by a bridge; the lenses stay clear.
         top, low = row - 1, row + 3
-        for x0, x1 in ((5 + shift, 9 + shift), (12 + shift, 17 + shift)):
+        for x0, x1 in ((6 + shift, 10 + shift), (12 + shift, 17 + shift)):
             for x in range(x0, x1 + 1):
                 put(x, top, "g")
                 put(x, low, "g")
             for y in range(top, low + 1):
                 put(x0, y, "g")
                 put(x1, y, "g")
-        put(10 + shift, row, "g")
-        put(11 + shift, row, "g")
+        put(11 + shift, row, "g")  # bridge
         for y in range(row, row + 2):  # temple arm toward the ear
             put(18 + shift + (y - row), row - 1 + (y - row), "g")
 
@@ -121,7 +113,11 @@ def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False) -> 
     g.paint(move(ellipse(22.5, 16, 2.5, 3.2)), lit("s", "S", lambda x, y: x - 22))  # ear
     _face(g, mood, dy, glasses)
     hair = _hair_fill(style)
-    g.paint(move(_hair_cells(style)), lambda x, y: hair(x, y - dy))
+    hair_cells = move(_hair_cells(style))
+    g.paint(hair_cells, lambda x, y: hair(x, y - dy))
+    for x, y in hair_cells:  # the fringe casts a soft shadow band on the forehead.
+        if (x, y + 1) not in hair_cells and g.px.get((x, y + 2)) == "s":
+            g.px[(x, y + 2)] = "S"
     if style == "cap":
         crown = {(x, y) for x, y in ellipse(17, 5, 12, 7) if y <= 9}
         g.paint(move(crown), lambda x, y: "w" if 2 <= y - dy <= 3 and 8 <= x <= 14 else ("r" if x > 22 else "R"))
