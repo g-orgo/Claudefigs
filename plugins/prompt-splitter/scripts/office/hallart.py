@@ -154,24 +154,49 @@ def draw_door_selection(canvas: Canvas, panel) -> None:
             canvas.put(panel.x + c, r, WHITE)
 
 
+def lit_box(canvas: Canvas, x: int, y: int, w: int, h: int, color: Color) -> None:
+    """A front-facing box in the office's line language: dark outline on the silhouette only, lit top and left rims,
+    shaded right and bottom rims."""
+    box(canvas, x, y, w, h, color)
+    rect(canvas, x + 1, y + 1, w - 2, 1, shade(color, 1.18))
+    rect(canvas, x + 1, y + 2, 1, h - 3, shade(color, 1.08))
+    rect(canvas, x + w - 2, y + 2, 1, h - 3, shade(color, 0.8))
+    rect(canvas, x + 2, y + h - 2, w - 3, 1, shade(color, 0.72))
+
+
 def draw_table(canvas: Canvas, x: int, y: int, tick: int, selected: bool) -> None:
-    """The central table: red parcel to the warehouse, coffee machine with a green led, plant and water cooler."""
-    box(canvas, x + 2, y + 17, 42, 18, (196, 150, 108))
-    box(canvas, x, y + 14, 46, 4, (234, 226, 214))
+    """The central table, facing the camera: red parcel to the warehouse, coffee machine with a green led, plant and
+    water cooler, drawn with soft inner lines and top-left light."""
+    from .props import _shade_area
+    _shade_area(canvas, [(x + 1, y + 35), (x + 4, y + 37), (x + 60, y + 37), (x + 60, y + 35)], 0.8)  # floor shadow
+    wood = (196, 150, 108)
+    lit_box(canvas, x + 2, y + 17, 42, 18, wood)
+    for px in range(x + 9, x + 42, 8):  # panel seams of the front, in a dark tone of the wood.
+        rect(canvas, px, y + 19, 1, 14, shade(wood, 0.78))
+        rect(canvas, px + 1, y + 19, 1, 14, shade(wood, 1.08))
+    lit_box(canvas, x, y + 14, 46, 4, (234, 226, 214))
     parcel = (240, 90, 90) if not selected else (255, 130, 110)
-    box(canvas, x + 2, y + 7, 10, 8, parcel)
+    lit_box(canvas, x + 2, y + 7, 10, 8, parcel)
     rect(canvas, x + 6, y + 8, 2, 6, (250, 214, 150))
-    box(canvas, x + 15, y + 2, 13, 13, (72, 76, 96))
-    box(canvas, x + 17, y + 4, 7, 3, (120, 220, 200))
-    box(canvas, x + 18, y + 9, 5, 4, (250, 250, 250))
+    rect(canvas, x + 7, y + 8, 1, 6, (214, 170, 110))
+    machine = (72, 76, 96)
+    lit_box(canvas, x + 15, y + 2, 13, 13, machine)
+    box(canvas, x + 17, y + 4, 7, 3, (120, 220, 200), shade(machine, 0.55))
+    rect(canvas, x + 18, y + 5, 2, 1, (200, 250, 240))
+    box(canvas, x + 18, y + 9, 5, 4, (250, 250, 250), shade(machine, 0.55))
+    rect(canvas, x + 19, y + 11, 3, 1, (210, 214, 226))
     led = (90, 240, 130) if (tick // 6) % 2 else (40, 110, 70)
     rect(canvas, x + 25, y + 4, 2, 2, led)
-    box(canvas, x + 32, y + 8, 8, 7, (200, 130, 90))
+    lit_box(canvas, x + 32, y + 8, 8, 7, (200, 130, 90))
+    rect(canvas, x + 32, y + 8, 8, 1, OUTLINE)
     for dx, dy in ((-3, -3), (0, -6), (4, -5), (7, -3), (2, -3)):
         rect(canvas, x + 34 + dx, y + 8 + dy, 4, 3, (92, 186, 118))
-    box(canvas, x + 48, y + 21, 11, 14, (232, 236, 244))
-    box(canvas, x + 49, y + 7, 9, 15, (150, 214, 248))
+        rect(canvas, x + 34 + dx, y + 8 + dy, 3, 1, (150, 222, 160))
+        rect(canvas, x + 35 + dx, y + 10 + dy, 3, 1, (58, 140, 88))
+    lit_box(canvas, x + 48, y + 21, 11, 14, (232, 236, 244))
+    lit_box(canvas, x + 49, y + 7, 9, 15, (150, 214, 248))
     rect(canvas, x + 50, y + 8, 7, 7 + (tick // 90) % 5, (205, 236, 252))
+    rect(canvas, x + 50, y + 8, 1, 12, (240, 250, 255))  # glass glint
     rect(canvas, x + 50, y + 26, 3, 2, (90, 150, 230))
     rect(canvas, x + 55, y + 26, 3, 2, (235, 90, 90))
 

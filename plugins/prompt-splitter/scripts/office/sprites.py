@@ -1,6 +1,8 @@
 """Chibi characters of the office viewer: pixel art as text rows, recolored per Look."""
 from dataclasses import dataclass
 
+from . import heads
+
 Color = tuple[int, int, int]
 
 
@@ -194,7 +196,7 @@ class _Layer:
 def _palette(look: Look) -> dict[str, Color]:
     skin = rgb(look.skin)
     return {
-        "o": OUTLINE, "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
+        "o": OUTLINE, "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
         "i": rgb(look.eyes), "b": (255, 150, 150), "m": (190, 90, 90), "t": rgb(look.top), "T": rgb(look.top_sh),
         "k": rgb(look.accent), "K": rgb(look.accent_sh), "p": rgb(look.pants), "P": tuple(max(0, c - 20) for c in rgb(look.pants)),
         "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195),
@@ -214,16 +216,15 @@ def frame_of(pose: str, tick: int) -> tuple:
 
 
 def _draw_head(canvas: Canvas, x: int, y: int, look: Look, pal: dict, dy: int, mood: str, tick: int, flip: bool) -> None:
-    _stamp(canvas, x, y + dy, HEAD, pal, flip)
+    _stamp(canvas, x - 2, y + dy - 2, list(heads.head_rows(look.hair_style)), pal, flip, heads.W - 1)
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
-    for row, text in EYES[mood]:
+    for row, text in heads.EYES[mood]:
         _stamp(canvas, x, y + dy + row, [text], pal, flip)
-    _stamp(canvas, x, y + dy + CHEEKS[0], [CHEEKS[1]], pal, flip)
+    _stamp(canvas, x, y + dy + heads.CHEEKS[0], [heads.CHEEKS[1]], pal, flip)
     if look.glasses:
-        for row, text in GLASSES:
-            _stamp(canvas, x, y + dy + row, [text.replace(" ", ".")], pal, flip)
-    _stamp(canvas, x - 2, y + dy - 2, TURNED_HAIR[look.hair_style], pal, flip, 19)
+        for row, text in heads.GLASSES:
+            _stamp(canvas, x, y + dy + row, [text], pal, flip)
 
 
 def _draw_arms(canvas: Canvas, x: int, y: int, arms: list, pal: dict, flip: bool) -> None:
