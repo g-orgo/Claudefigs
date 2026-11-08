@@ -1,6 +1,6 @@
 """Small objects on top of an office desk: keyboard, mouse and the decor of each furniture kit."""
 from .props import OUTLINE, Kit, fill_poly
-from .sprites import Canvas, Color
+from .sprites import Canvas, Color, _Layer
 
 PALETTE: dict[str, Color] = {
     "o": OUTLINE, "w": (255, 255, 255), "W": (226, 230, 240), "g": (170, 175, 195), "G": (112, 118, 140),
@@ -36,10 +36,12 @@ RAINBOW = [(255, 90, 110), (255, 170, 70), (250, 230, 90), (110, 230, 120), (90,
 
 def draw_item(canvas: Canvas, x: int, y: int, name: str) -> None:
     rows = ITEMS[name]
+    layer = _Layer()  # same top-left light as the characters, so the decor gets volume too.
     for j, row in enumerate(rows):
         for i, ch in enumerate(row):
             if ch != ".":
-                canvas.put(x + i, y - len(rows) + 1 + j, PALETTE[ch])
+                layer.put(x + i, y - len(rows) + 1 + j, PALETTE[ch])
+    layer.flush(canvas)
 
 
 def draw_keyboard(canvas: Canvas, x: int, y: int, kit: Kit, tick: int) -> None:

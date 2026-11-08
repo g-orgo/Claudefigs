@@ -541,13 +541,14 @@ class FurnitureTests(unittest.TestCase):
 
     def test_seated_arms_are_drawn_over_the_desk_top(self):
         look = sprites.LOOKS[0]
-        skin = sprites.rgb(look.skin)
+        base = sprites.rgb(look.skin)
+        skin = {base, sprites._tone(base, 0.82), sprites._tone(base, 1.12)}  # the shading pass tones the small hands.
         x, y = 10, 20
         for pose in ("type", "look", "read", "think", "phone", "coffee"):
             for tick in range(0, 48, 4):
                 canvas = self.station(lambda c: props.draw_desk(c, x, y))
                 sprites.draw(canvas, x + props.SEAT_DX, y + props.SEAT_DY, look, pose, tick, "front")
-                on_top = [(col, row) for row in range(y + 8, y + 15) for col in range(x + 20, x + 36) if canvas.rows[row][col] == skin]
+                on_top = [(col, row) for row in range(y + 8, y + 15) for col in range(x + 20, x + 36) if canvas.rows[row][col] in skin]
                 self.assertTrue(on_top, f"{pose} has no hand on the desk at tick {tick}")
 
     def test_head_on_the_desk_is_not_cut_by_it(self):

@@ -124,14 +124,17 @@ def _shade_area(canvas: Canvas, points: list[tuple[int, int]], factor: float = 0
 
 
 def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
-    """Padded backrest with rounded top, seams and a shaded side."""
-    left, right, top, bottom = x + 20, x + 36, y - 4, y + 12
-    fill_poly(canvas, [(left + 2, top), (right - 2, top), (right, top + 2), (right, bottom), (left, bottom), (left, top + 2)], kit.chair)
-    for col in range(left + 2, right - 1):
-        canvas.put(col, top + 1, kit.chair_hi)
-    for row in range(top + 2, bottom):
-        canvas.put(left + 1, row, kit.chair_hi)
-        canvas.put(right - 1, row, kit.chair_lo)
+    """Isometric office chair: a diamond seat, a padded backrest on the rear edges and a floor shadow."""
+    seat = [(x + 28, y + 2), (x + 36, y + 6), (x + 28, y + 10), (x + 20, y + 6)]
+    _shade_area(canvas, [(x + 21, y + 9), (x + 28, y + 13), (x + 35, y + 9), (x + 28, y + 5)], 0.75)  # floor shadow
+    # Backrest on the two rear edges, rising 10 px from the seat.
+    fill_poly(canvas, [(x + 20, y + 6), (x + 28, y + 2), (x + 28, y - 6), (x + 20, y - 2)], kit.chair)
+    fill_poly(canvas, [(x + 28, y + 2), (x + 36, y + 6), (x + 36, y - 2), (x + 28, y - 6)], kit.chair_lo)
+    for t in range(0, 9):  # lit top edge of the backrest.
+        canvas.put(x + 20 + t, y - 2 - t // 2, kit.chair_hi)
+    fill_poly(canvas, seat, kit.chair)
+    for t in range(0, 9):  # lit front-left edge of the seat.
+        canvas.put(x + 20 + t, y + 6 - t // 2, kit.chair_hi)
 
 
 def _draw_desk_top(canvas: Canvas, x: int, y: int, kit: Kit, corners: tuple) -> None:
@@ -152,7 +155,7 @@ def draw_desk(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
     """A long desk along the down-right axis; the character sits behind its rear edge."""
     p0, p1, p2, p3 = (x + 12, y), (x + 40, y + 14), (x + 28, y + 20), (x, y + 6)
     drop = LEG_DROP
-    _shade_area(canvas, [(p3[0] + 1, p3[1] + drop), (p2[0], p2[1] + drop + 1), (p1[0] - 1, p1[1] + drop), (p1[0] - 1, p1[1]), (p3[0] + 1, p3[1])])
+    _shade_area(canvas, [(p3[0] + 1, p3[1] + drop), (p2[0], p2[1] + drop + 1), (p1[0] - 1, p1[1] + drop), (p1[0] - 1, p1[1]), (p3[0] + 1, p3[1])], 0.75)
     for lx, (_, ly) in ((p3[0] + 1, p3), (p2[0] - 1, p2), (p1[0] - 3, p1)):
         # Each leg starts inside the skirt, which is drawn over its top, so it can never float below the desk.
         fill_poly(canvas, [(lx, ly + 1), (lx + 2, ly + 1), (lx + 2, ly + drop), (lx, ly + drop)], kit.leg, None)
@@ -160,6 +163,13 @@ def draw_desk(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
             canvas.put(lx, leg_y, kit.leg_hi)
     fill_poly(canvas, [p3, p2, (p2[0], p2[1] + SKIRT), (p3[0], p3[1] + SKIRT)], kit.left)
     fill_poly(canvas, [p2, p1, (p1[0], p1[1] + SKIRT), (p2[0], p2[1] + SKIRT)], kit.right)
+    # Deep underside: a darkest 1 px band along the bottom edge of each face, following the 2:1 diagonal.
+    # Leg pixels stay on top of the band, so every leg still reaches the desk.
+    band = [(p3[0] + t, p3[1] + SKIRT + t // 2, _ramp(kit.left)[3]) for t in range(p2[0] - p3[0])]
+    band += [(p2[0] + t, p2[1] + SKIRT - t // 2, _ramp(kit.right)[3]) for t in range(p1[0] - p2[0])]
+    for bx, by, color in band:
+        if canvas.rows[by][bx] not in (kit.leg, kit.leg_hi):
+            canvas.put(bx, by, color)
     for t in range(3, 25):  # bright lip below the top, then a drawer with its handle on the long face.
         canvas.put(p3[0] + t, p3[1] + (t + 1) // 2 + 1, kit.trim)
     for t in range(8, 21):
@@ -191,7 +201,7 @@ def draw_monitor(canvas: Canvas, x: int, y: int, screen: str, tick: int, glow: b
     wide = kit.monitor == "wide"
     mx, my = x + (15 if wide else 13), y - 10
     width, tall, cols, rows_tall = (16, 9, 13, 6) if wide else (13, 10, 10, 7)
-    depth = {"crt": 3, "flat": 1, "wide": 1, "candy": 2}[kit.monitor]
+    depth = {"crt": 3, "flat": 2, "wide": 2, "candy": 2}[kit.monitor]
     cx = x + 7
     fill_poly(canvas, [(cx - 6, y + 7), (cx, y + 4), (cx + 6, y + 7), (cx, y + 10)], kit.stand)
     for t in range(1, 6):  # lit rim of the foot.
@@ -253,15 +263,32 @@ ROOM_PALETTES = [
 CORRIDOR_TILES = ((204, 214, 226), (190, 201, 216), (172, 183, 200))  # light, dark, grout
 
 
-def tile_color(x: int, y: int, light: Color, dark: Color, grout: Color) -> Color:
-    """Isometric floor tile colour at a pixel: grout on the tile edges, checker light and dark otherwise."""
-    a, b = (x + 2 * y) // 28, (2 * y - x) // 28
-    on_edge = (x + 2 * y) % 28 == 0 or (2 * y - x) % 28 == 0
+def tile_color(x: int, y: int, light: Color, dark: Color, grout: Color, period: int = 28) -> Color:
+    """Isometric floor tile colour at a pixel: grout on the tile edges, checker light and dark otherwise.
+
+    A diamond tile spans `period` units along both diagonals, so its size is period/2 wide and period/4 tall.
+    """
+    a, b = (x + 2 * y) // period, (2 * y - x) // period
+    on_edge = (x + 2 * y) % period == 0 or (2 * y - x) % period == 0
     return grout if on_edge else (light if (a + b) % 2 == 0 else dark)
+
+
+ROOM_TILE_PERIOD = 16  # room floor diamonds are 16 px wide and 8 px tall.
+SLAB = 4  # pixels of the room floor's front face, outline included.
 
 
 def _shade(color: Color, factor: float) -> Color:
     return tuple(int(c * factor) for c in color)
+
+
+def _ramp(color: Color) -> tuple[Color, Color, Color, Color]:
+    """Material ramp: highlight, base, shade and deep shade, at 1.15, 1.0, 0.8 and 0.6 of the base, clamped."""
+    return tuple(tuple(min(255, int(c * f)) for c in color) for f in (1.15, 1.0, 0.8, 0.6))
+
+
+def _slab_edge(room, x: int) -> int:
+    """Lowest pixel row of the floor slab at column x: 2:1 diagonals rise from the front corners, flat in the middle."""
+    return room.bottom - SLAB + min(SLAB, min(x - room.left, room.right - x) // 2)
 
 
 def draw_corridor(canvas: Canvas) -> None:
@@ -274,27 +301,45 @@ def draw_corridor(canvas: Canvas) -> None:
 
 def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
     """Walls, floor, corner posts, door and sign backing of one room. room is a rooms.Room (duck-typed)."""
-    tile_light, tile_dark, grout, wall_left, wall_center, wall_right, cap = ROOM_PALETTES[room.palette]
-    left, right, top, bottom = room.left, room.right, room.top, room.bottom
+    tile_light, tile_dark, grout, wall_left, _wall_center, wall_right, cap = ROOM_PALETTES[room.palette]
+    left, right, top = room.left, room.right, room.top
     base = room.floor_edge
     height = room.floor_y - top - 2
     k = CHAMFER_CELLS
+    far = tuple((a + c) // 2 for a, c in zip(wall_left, wall_right))  # far wall: the middle tone between the two faces
+    lip = _ramp(tile_dark)
 
+    # Floor slab: the tiled floor ends in a 3 px front face whose lower outline is a shallow V, outlined in dark.
     for x in range(left, right + 1):
-        for y in range(base(x), bottom + 1):
-            canvas.put(x, y, tile_color(x, y, tile_light, tile_dark, grout))
+        b = base(x)
+        front = _slab_edge(room, x)
+        for y in range(b, front - SLAB + 1):
+            color = tile_color(x, y, tile_light, tile_dark, grout, ROOM_TILE_PERIOD)
+            if y - b in (1, 2):  # ambient occlusion: the floor just in front of a wall is a little darker.
+                color = _shade(color, 0.8 if y - b == 1 else 0.9)
+            canvas.put(x, y, color)
+        canvas.put(x, front - 3, lip[2])
+        canvas.put(x, front - 2, lip[2])
+        canvas.put(x, front - 1, lip[3])
+        canvas.put(x, front, OUTLINE)
 
+    # Iso back wall: the lit left face, the far wall in the middle tone and the shaded right face.
     for x in range(left, right + 1):
         b = base(x)
         t = b - height
-        wall = wall_left if x < left + 2 * k else wall_right if x > right - 2 * k else wall_center
+        if x < left + 2 * k:
+            wall = _ramp(wall_left)[0]  # lit left face
+        elif x > right - 2 * k:
+            wall = _ramp(wall_right)[2]  # shaded right face
+        else:
+            wall = far
         for y in range(t, b):
             if y - t < 3:
                 color = cap
             elif y - t == 3:
                 color = _shade(wall, 0.8)
-            elif y >= b - 2:
-                color = _shade(wall, 0.75)
+            elif y >= b - 2:  # baseboard: two darker pixels along the foot of the wall
+                color = _ramp(wall)[3]
             else:
                 color = wall
             canvas.put(x, y, color)
@@ -311,7 +356,7 @@ def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
             canvas.put(x, y, cap)
     for x in (left, right):
         b = base(x)
-        for y in range(b - height - 1, bottom + 1):
+        for y in range(b - height - 1, _slab_edge(room, x) + 1):
             canvas.put(x, y, OUTLINE)
     for x in (left + 3, right - 3):
         b = base(x)
@@ -332,10 +377,6 @@ def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
         for y in range(lintel - 1, base(x)):
             canvas.put(x, y, OUTLINE)
 
-    for x in range(left + 1, right):
-        canvas.put(x, bottom - 1, _shade(grout, 0.8))
-    for x in range(left, right + 1):
-        canvas.put(x, bottom, OUTLINE)
 
     x0, x1 = room.sign_col - 1, room.sign_col + sign_width
     y0, y1 = top - 1, top + 2

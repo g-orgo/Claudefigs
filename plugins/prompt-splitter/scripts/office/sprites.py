@@ -51,20 +51,21 @@ LOOKS = [
     Look("cap", "#f0c3a2", "#7a4a2a", "#e65f5f", "#40384e", "#6cc47c", "#4c9c5c", "#e6ffe9", "#b5e6be", "#49434f", glasses=True),
 ]
 
+# Head in a 3/4 view turned toward the monitor on the left: the far side (right) is in shade and shows an ear.
 HEAD = [
-    "....oooooooo....", "..oossssssssoo..", ".ossssssssssssoo"[:15] + ".",
-    *[".ossssssssssssо."[:2] + "s" * 12 + "o."] * 6,
-    "..ossssssssssо.."[:3] + "s" * 10 + "o..", "...oossssssoo...", ".....oooooo.....",
+    "....oooooooo....", "..oossssssssoo..", ".osssssssssssSo.", ".osssssssssssSo.", ".ossssssssssSSo.",
+    ".ossssssssssSSoo", ".ossssssssssSSOo", ".ossssssssssSSoo", ".osssssssssSSSo.",
+    "..osssssssssSSo.", "...oosssssSSoo..", ".....oooooo.....",
 ]
-# Eye expressions as (row, text) overlays on the head.
+# Eye expressions as (row, text) overlays on the head; the near eye is wider than the far one.
 EYES = {
-    "open": [(5, "...eW.....eW...."), (6, "...ee.....ee...."), (7, "...ei.....ei....")],
-    "blink": [(6, "...ee.....ee....")],
-    "happy": [(5, "...ee.....ee...."), (6, "..e..e...e..e...")],
-    "down": [(6, "...eW.....eW...."), (7, "...ee.....ee....")],
-    "right": [(5, "....eW.....eW..."), (6, "....ee.....ee..."), (7, "....ei.....ei...")],
+    "open": [(5, "..eW.....eW....."), (6, "..ee.....ee....."), (7, "..ei.....ei.....")],
+    "blink": [(6, "..ee.....ee.....")],
+    "happy": [(5, "..ee.....ee....."), (6, ".e..e...e..e....")],
+    "down": [(6, "..eW.....eW....."), (7, "..ee.....ee.....")],
+    "right": [(5, "...eW.....eW...."), (6, "...ee.....ee...."), (7, "...ei.....ei....")],
 }
-CHEEKS = (8, "..bb...mm...bb..")
+CHEEKS = (8, ".bb...mm...bS...")
 GLASSES = [(4, "..ooooo..ooooo.."), (5, "..o...o..o...o.."), (6, "..o...oooo...o.."), (7, "..o...o..o...o..")]
 
 # Hair rows start 2 rows above the head and 2 columns left of it.
@@ -139,10 +140,41 @@ POSES = {
 LYING = 4  # from this head drop on, the head rests on the desk and is drawn over it.
 
 
+OUTLINE: Color = (46, 34, 58)
+
+
+def _tone(color: Color, factor: float) -> Color:
+    return tuple(max(0, min(255, int(c * factor))) for c in color)
+
+
+class _Layer:
+    """Collects one character's pixels so they can be shaded as a whole before reaching the canvas."""
+
+    def __init__(self):
+        self.px: dict[tuple[int, int], Color] = {}
+
+    def put(self, x: int, y: int, color: Color) -> None:
+        self.px[(x, y)] = color
+
+    def flush(self, canvas: Canvas) -> None:
+        """Light from the top-left: a fill pixel touching the outline (or the edge) on its right or below gets a shade
+        tone, one touching it on its left or above gets a highlight, which gives every pose a rounded volume."""
+        px = self.px
+        for (x, y), color in px.items():
+            if color != OUTLINE:
+                right, below = px.get((x + 1, y), OUTLINE), px.get((x, y + 1), OUTLINE)
+                left, above = px.get((x - 1, y), OUTLINE), px.get((x, y - 1), OUTLINE)
+                if right == OUTLINE or below == OUTLINE:
+                    color = _tone(color, 0.82)
+                elif left == OUTLINE or above == OUTLINE:
+                    color = _tone(color, 1.12)
+            canvas.put(x, y, color)
+
+
 def _palette(look: Look) -> dict[str, Color]:
     skin = rgb(look.skin)
     return {
-        "o": (46, 34, 58), "s": skin, "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
+        "o": OUTLINE, "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
         "i": rgb(look.eyes), "b": (255, 150, 150), "m": (190, 90, 90), "t": rgb(look.top), "T": rgb(look.top_sh),
         "k": rgb(look.accent), "K": rgb(look.accent_sh), "p": rgb(look.pants), "P": tuple(max(0, c - 20) for c in rgb(look.pants)),
         "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195),
@@ -184,6 +216,14 @@ def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer
     """Draws a 16px wide character whose head top is at y; body starts at y+11. Returns the frame's fx name.
 
     "back" goes behind the desk, "front" over it: arms and a head lying on the desk are repeated there."""
+    target, canvas = canvas, _Layer()
+    try:
+        return _draw(canvas, x, y, look, pose, tick, layer, flip, eyes)
+    finally:
+        canvas.flush(target)
+
+
+def _draw(canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str, flip: bool, eyes: str) -> str:
     body, dy, expression, arms, fx = frame_of(pose, tick)
     pal = _palette(look)
     mood = eyes or expression
