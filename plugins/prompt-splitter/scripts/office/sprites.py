@@ -38,17 +38,18 @@ class Look:
     pants: str = "#3b4262"
     shoes: str = "#2a2433"
     glasses: bool = False
+    lashes: bool = False  # a lash dot beside each eye.
 
 
 # LOOKS[0] is the main character: white dress shirt and red tie.
 LOOKS = [
     Look("neat", "#ffd9bf", "#3a2c3f", "#5d4a68", "#3a2c3f", "#fbfbff", "#c9cfe0", "#e0405a", "#a92a44"),
-    Look("bob", "#ffe0cc", "#e0708f", "#f7a3b8", "#7a3350", "#7fd0c8", "#55a8a3", "#fff4d6", "#e0cfa0", "#54486e"),
+    Look("bob", "#ffe0cc", "#e0708f", "#f7a3b8", "#7a3350", "#7fd0c8", "#55a8a3", "#fff4d6", "#e0cfa0", "#54486e", lashes=True),
     Look("spiky", "#e8b48f", "#f2b632", "#ffdc72", "#35527a", "#5c7fd6", "#4260ad", "#dde6ff", "#a9b9e8", "#2f3550"),
-    Look("ponytail", "#ffd9bf", "#8a4b2d", "#b56f45", "#3f6b3a", "#f6c6d4", "#d79db0", "#ffffff", "#e7d3da", "#6a4f7c"),
-    Look("bun", "#c98d67", "#2b2233", "#4b3d57", "#2b2233", "#f4b04f", "#cf8a2e", "#fff0c9", "#e3c98c", glasses=True),
-    Look("curly", "#8f5d41", "#2c1f22", "#51393b", "#2c1f22", "#9b6fd6", "#7850ad", "#e7d8ff", "#bda6e6", "#3d3a58"),
-    Look("long", "#ffe6d6", "#6f7fe0", "#9eaafa", "#2f3a8a", "#ffffff", "#d3d8ea", "#3f4f86", "#2d3a68", "#39405f"),
+    Look("ponytail", "#ffd9bf", "#8a4b2d", "#b56f45", "#3f6b3a", "#f6c6d4", "#d79db0", "#ffffff", "#e7d3da", "#6a4f7c", lashes=True),
+    Look("bun", "#c98d67", "#2b2233", "#4b3d57", "#2b2233", "#f4b04f", "#cf8a2e", "#fff0c9", "#e3c98c", glasses=True, lashes=True),
+    Look("curly", "#8f5d41", "#2c1f22", "#51393b", "#2c1f22", "#9b6fd6", "#7850ad", "#e7d8ff", "#bda6e6", "#3d3a58", lashes=True),
+    Look("long", "#ffe6d6", "#6f7fe0", "#9eaafa", "#2f3a8a", "#ffffff", "#d3d8ea", "#3f4f86", "#2d3a68", "#39405f", lashes=True),
     Look("cap", "#f0c3a2", "#7a4a2a", "#e65f5f", "#40384e", "#6cc47c", "#4c9c5c", "#e6ffe9", "#b5e6be", "#49434f", glasses=True),
 ]
 
@@ -140,16 +141,20 @@ def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer
     mood = eyes or frame[3]
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
-    grid = _poses.frame_grid(frame, look.hair_style, mood, look.glasses, layer, face=not small)
+    grid = _poses.frame_grid(frame, look.hair_style, mood, look.glasses, layer, face=not small, lashes=look.lashes)
     pal = _palette(look)
     px = {p: pal[c] for p, c in grid.px.items()}
     if small:
         px = _half(px)
         if _poses.shows_head(frame, layer):
             skin = {pal["s"], pal["S"], pal["O"]}
-            for p, c in _figure.small_face(mood, frame[2], look.glasses).items():
-                if px.get(p) in skin:  # only on skin: a cut over the face keeps its hair.
-                    px[p] = pal[c]
+            row = _figure.small_eye_row(mood, frame[2])
+            cols = [x for (x, y), c in px.items() if y == row and c in skin]
+            if cols:
+                span = (min(cols), max(cols))
+                for p, c in _figure.small_face(mood, frame[2], look.glasses, look.lashes, span).items():
+                    if p in px and px[p] != OUTLINE:
+                        px[p] = pal[c]
     width = CELL_W // 2 if small else CELL_W
     layer_px = _Layer(shade=False)
     for (gx, gy), color in px.items():

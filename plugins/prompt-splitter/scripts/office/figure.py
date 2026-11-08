@@ -59,16 +59,19 @@ def _hair_fill(style: str):
 
 EYE_ROW = 15
 NEAR_EYE = ("eW", "ee", "ie")  # 2x3: catch light on top, a touch of iris colour below.
-FAR_EYE = ("e", "e", "e")  # the far eye is foreshortened to a single column.
+FAR_EYE = NEAR_EYE  # both eyes alike, so neither reads as closed or smaller.
 
 
-def _face(g: Grid, mood: str, dy: int, glasses: bool) -> None:
+def _face(g: Grid, mood: str, dy: int, glasses: bool, lashes: bool = False) -> None:
     """Far eye (left) foreshortened, near eye with iris and catch light, nose shade, lips, blush, ear on the right."""
     row = EYE_ROW + dy + (1 if mood == "down" else 0)
     shift = 1 if mood == "right" else 0
     put = lambda x, y, c: g.px.__setitem__((x, y), c)
+    closed = mood in ("blink", "happy")
     for ex, eye in ((8, FAR_EYE), (13, NEAR_EYE)):
         x0, w = ex + shift, len(eye[0])
+        if lashes:  # a lash dot beside the top of each eye, on its outer side; it follows a closed lid.
+            put(x0 - 2 if ex < 10 else x0 + w + 1, row + 1 if closed else row, "e")
         if mood in ("blink", "happy"):
             for i in range(-1, w + 1 if w > 1 else 1):  # a closed eye is a line, never a single dot.
                 arc = mood == "happy" and w > 1 and i in (-1, w)
@@ -104,13 +107,13 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool) -> None:
         put(18 + shift, row - 2, "G")  # temple arm toward the ear
 
 
-def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False, face: bool = True) -> None:
+def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False, face: bool = True, lashes: bool = False) -> None:
     move = lambda cells: {(x, y + dy) for x, y in cells}
     g.paint(move(limb((16, 25), (16, 30), 4)), lit("S", "O", lambda x, y: x - 16))  # neck, in the chin's shadow
     g.paint(move(_skull()), lit("s", "S", lambda x, y: x - 19 + (y - dy - 13) // 3))
     g.paint(move(ellipse(22.5, 16, 2.5, 3.2)), lit("s", "S", lambda x, y: x - 22))  # ear
     if face:
-        _face(g, mood, dy, glasses)
+        _face(g, mood, dy, glasses, lashes)
     hair = _hair_fill(style)
     hair_cells = move(_hair_cells(style))
     g.paint(hair_cells, lambda x, y: hair(x, y - dy))
@@ -141,22 +144,28 @@ def legs(g: Grid, back_knee: tuple, back_foot: tuple, front_knee: tuple, front_f
         g.paint(ellipse(foot[0] - 2, foot[1] + 2, 5, 2.8), lit("f", "F", lambda x, y, f=foot: f[0] - x - 3))
 
 
-def small_face(mood: str, dy: int, glasses: bool) -> dict:
-    """Face of the half-size avatar, drawn on the half grid: downsampled 3 px eyes would merge into a bar, so the
-    small view gets its own dot eyes, like the hotel's zoomed-out avatars."""
-    row = (EYE_ROW + dy) // 2 + (1 if mood == "down" else 0)
-    shift = 1 if mood == "right" else 0
+def small_eye_row(mood: str, dy: int) -> int:
+    return (EYE_ROW + 1 + dy) // 2 + (1 if mood == "down" else 0)  # first clean skin row under every fringe
+
+
+def small_face(mood: str, dy: int, glasses: bool, lashes: bool, span: tuple) -> dict:
+    """Face of the half-size avatar on the half grid: downsampled eyes would merge into a bar, so the small view gets
+    two equal dot eyes at fixed columns, like the hotel's zoomed-out avatars (no sideways glance: a shifted eye would
+    touch the face edge and look bigger). Lashes add a dot beside the top of each eye, on its outer side; span is the
+    skin (left, right) of the eye row, for the glasses rim."""
+    row = small_eye_row(mood, dy)
+    closed = mood in ("blink", "happy")
     px = {}
-    for ex in (4, 7):
-        if mood in ("blink", "happy"):
-            px[(ex + shift, row + 1)] = "e"
-        else:
-            px[(ex + shift, row)] = "e"
-            px[(ex + shift, row + 1)] = "e"
-    px[(8, row + 2)] = "b"
-    px[(5, (22 + dy) // 2)] = "m"
-    px[(6, (22 + dy) // 2)] = "m"
-    if glasses:  # a thin mid-grey rim over each eye; a dark one reads as a band at this size.
-        for x in (3, 4, 5, 6, 7, 8):
+    for ex, out in ((4, -1), (7, 1)):
+        px[(ex, row + 1)] = "e"
+        if not closed:  # both eyes open or close together.
+            px[(ex, row)] = "e"
+        if lashes:
+            px[(ex + out, row + 1 if closed else row)] = "e"
+    px[(5, row + 3)] = "m"
+    px[(6, row + 3)] = "m"
+    px[(7, row + 2)] = "b"
+    if glasses:  # a thin mid-grey rim over the eyes; a dark one reads as a band at this size.
+        for x in range(span[0], span[1] + 1):
             px[(x, row - 1)] = "Q"
     return px
