@@ -55,6 +55,7 @@ LOOKS = [
 # Head in a 3/4 view turned toward the monitor on the left: the far side (right) is in shade and shows an ear.
 from .poses import LYING, POSES  # noqa: E402  (joint frames of the hotel-style avatar)
 from . import poses as _poses  # noqa: E402
+from . import figure as _figure  # noqa: E402
 from .rig import CELL_W  # noqa: E402
 
 
@@ -113,7 +114,7 @@ def _palette(look: Look) -> dict[str, Color]:
         "o": OUTLINE, "F": _tone(rgb(look.shoes), 1.6), "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "r": _tone(rgb(look.hair_hi), 0.72), "w": _tone(rgb(look.hair_hi), 1.25), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
         "i": rgb(look.eyes), "b": (255, 150, 150), "m": (190, 90, 90), "t": rgb(look.top), "T": rgb(look.top_sh),
         "k": rgb(look.accent), "K": rgb(look.accent_sh), "p": rgb(look.pants), "P": tuple(max(0, c - 20) for c in rgb(look.pants)),
-        "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195),
+        "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195), "G": (52, 46, 66), "Q": (112, 106, 128),
     }
 
 
@@ -139,11 +140,16 @@ def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer
     mood = eyes or frame[3]
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
-    grid = _poses.frame_grid(frame, look.hair_style, mood, look.glasses, layer)
+    grid = _poses.frame_grid(frame, look.hair_style, mood, look.glasses, layer, face=not small)
     pal = _palette(look)
     px = {p: pal[c] for p, c in grid.px.items()}
     if small:
         px = _half(px)
+        if _poses.shows_head(frame, layer):
+            skin = {pal["s"], pal["S"], pal["O"]}
+            for p, c in _figure.small_face(mood, frame[2], look.glasses).items():
+                if px.get(p) in skin:  # only on skin: a cut over the face keeps its hair.
+                    px[p] = pal[c]
     width = CELL_W // 2 if small else CELL_W
     layer_px = _Layer(shade=False)
     for (gx, gy), color in px.items():

@@ -64,7 +64,7 @@ def _prop(g: Grid, kind: str, hand: tuple) -> None:
                 lambda x, y: "g" if (y - hy) % 3 == 0 and x < hx + 8 else "W")
 
 
-def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str) -> Grid:
+def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, face: bool = True) -> Grid:
     """Letter grid of one frame. layer "back" is the whole figure behind the desk, "front" only the arms (and a
     head lying on the desk) drawn over it, "all" everything for a standing character."""
     legs, (back, front, prop), dy, _, _ = frame
@@ -76,13 +76,18 @@ def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str) -
             F.legs(g, *legs)
         F.torso(g)
         if not lying:
-            F.head(g, style, mood, dy, glasses)
+            F.head(g, style, mood, dy, glasses, face)
         F.arm(g, F.SHOULDER_FRONT, *front)
     else:
         F.arm(g, F.SHOULDER_BACK, *back)
         F.arm(g, F.SHOULDER_FRONT, *front)
         if lying:
-            F.head(g, style, mood, dy, glasses)
+            F.head(g, style, mood, dy, glasses, face)
     if prop:
         _prop(g, prop, front[1])
     return g
+
+
+def shows_head(frame: tuple, layer: str) -> bool:
+    lying = frame[2] >= LYING
+    return layer == "all" or (layer == "back") != lying
