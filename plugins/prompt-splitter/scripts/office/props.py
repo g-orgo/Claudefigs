@@ -1,4 +1,5 @@
 """Isometric furniture, room and small effect icons of the office viewer."""
+import math
 from dataclasses import dataclass
 
 from .sprites import Canvas, Color, soften_lines
@@ -169,17 +170,41 @@ def _shade_area(canvas: Canvas, points: list[tuple[int, int]], factor: float = 0
 
 
 def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
-    """Isometric office chair: a diamond seat, a padded backrest on the rear edges and a floor shadow."""
-    seat = [(x + 28, y + 2), (x + 36, y + 6), (x + 28, y + 10), (x + 20, y + 6)]
-    _shade_area(canvas, [(x + 21, y + 9), (x + 28, y + 13), (x + 35, y + 9), (x + 28, y + 5)], 0.75)  # floor shadow
-    # Backrest on the two rear edges, rising 10 px from the seat.
-    fill_poly(canvas, [(x + 20, y + 6), (x + 28, y + 2), (x + 28, y - 6), (x + 20, y - 2)], kit.chair)
-    fill_poly(canvas, [(x + 28, y + 2), (x + 36, y + 6), (x + 36, y - 2), (x + 28, y - 6)], kit.chair_lo)
-    for t in range(0, 9):  # lit top edge of the backrest.
-        canvas.put(x + 20 + t, y - 2 - t // 2, kit.chair_hi)
-    fill_poly(canvas, seat, kit.chair)
-    for t in range(0, 9):  # lit front-left edge of the seat.
-        canvas.put(x + 20 + t, y + 6 - t // 2, kit.chair_hi)
+    """Swivel office chair facing down-left, drawn at full resolution even inside a Scaled piece: a rounded cushion,
+    a tufted backrest behind the sitter, a gas lift and a five-spoke base on casters."""
+    from .rig import Grid, ellipse, limb, polygon
+    if isinstance(canvas, Scaled):
+        canvas = canvas.inner
+    ox, oy = x + 40, y - 22  # local (0, 0) of the chair; the seat centre lands where the 1x seat used to be.
+    tones = {"C": kit.chair_hi, "c": kit.chair, "l": kit.chair_lo, "L": _shade(kit.chair_lo, 0.8),
+             "m": kit.leg, "M": kit.leg_hi, "k": _shade(kit.leg, 0.6), "o": OUTLINE}
+    g = Grid()
+    hub = (16, 54)
+    spokes = [(16 + round(15 * math.cos(a)), 54 + round(7 * math.sin(a)))
+              for a in (math.radians(90 + 72 * i) for i in range(5))]
+    spokes.sort(key=lambda p: p[1])  # far spokes first, so the near ones overlap them.
+    for end in spokes:
+        g.paint(limb(hub, end, 2.6), lambda u, v: "m")
+        g.paint(ellipse(end[0] + 0.5, end[1] + 1.5, 2, 1.6), lambda u, v: "k")
+    g.paint(ellipse(16.5, 54.5, 3, 1.8), lambda u, v: "M")
+    g.paint(limb((16, 42), (16, 53), 3.4), lambda u, v: "M" if u < 16 else "m")  # gas lift
+    # Backrest: a padded panel parallel to the rear edge, with its thickness showing on the right.
+    back = [(17, 12), (19, 10), (21, 10), (29, 14), (31, 17), (31, 33), (19, 28), (17, 25)]
+    g.paint(polygon([(px + 2, py - 1) for px, py in back]), lambda u, v: "L")
+    g.paint(polygon(back), lambda u, v: "C" if v - (u - 17) // 2 <= 10 else ("l" if u >= 29 else "c"))
+    for seam in (16, 21):  # two tufting seams across the pad.
+        for u in range(19, 29):
+            g.px[(u, seam + (u - 17) // 2)] = "l"
+    g.paint(limb((27, 31), (27, 38), 2.4), lambda u, v: "m")  # stem from the seat to the backrest
+    # Cushion: a rounded top with its rim showing in front.
+    g.paint(ellipse(16.5, 40, 15.5, 7) | polygon([(1, 36), (32, 36), (32, 40), (1, 40)]),
+            lambda u, v: "l" if u >= 17 else "c")
+    g.paint(ellipse(16.5, 36, 15.5, 7), lambda u, v: "C" if v <= 31 or u <= 4 else "c")
+    g.paint(limb((24, 40), (24, 34), 2), lambda u, v: "m")  # near armrest: a post and a padded rest.
+    g.paint(polygon([(18, 34), (29, 28), (32, 29), (32, 31), (21, 37), (18, 36)]),
+            lambda u, v: "C" if v + (u - 18) // 2 <= 34 else "l")
+    for (u, v), c in g.px.items():
+        canvas.put(ox + u, oy + v, tones[c])
 
 
 def _draw_desk_top(canvas: Canvas, x: int, y: int, kit: Kit, corners: tuple) -> None:

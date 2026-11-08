@@ -7,8 +7,11 @@ HIP_BACK, HIP_FRONT = (12, 50), (20, 52)
 TORSO = [(9, 27), (15, 26), (25, 30), (26, 34), (24, 52), (9, 50), (7, 32)]
 
 
+JAW = [(4.5, 12), (4.5, 22), (6.5, 26), (9.5, 28.6), (16, 28.6), (20, 26), (23, 19)]  # long face down to a soft chin.
+
+
 def _skull() -> set:
-    return ellipse(*HEAD_C, *HEAD_R)
+    return ellipse(*HEAD_C, *HEAD_R) | polygon(JAW)
 
 
 def _hair_cells(style: str) -> set:
@@ -54,37 +57,66 @@ def _hair_fill(style: str):
     return fill
 
 
+EYE_ROW = 15
+NEAR_EYE = ("eeW", "eie", "eee")  # 3x3: lash row with the catch light, iris, lower lid.
+FAR_EYE = ("e", "e", "e")  # the far eye is foreshortened to a single column.
+
+
 def _face(g: Grid, mood: str, dy: int, glasses: bool) -> None:
-    """Both eyes visible, the far one (left) narrower; nose as a shade, small mouth, blush, ear on the right."""
-    eyes = {"open": (14, False), "right": (14, False), "down": (15, False), "blink": (15, True), "happy": (14, True)}
-    row, closed = eyes[mood]
+    """Far eye (left) foreshortened, near eye with iris and catch light, brows, nose shade, lips, blush, ear on the right."""
+    row = EYE_ROW + dy + (1 if mood == "down" else 0)
     shift = 1 if mood == "right" else 0
-    for ex, w in ((7, 1), (13, 2)):
-        if closed:
-            for i in range(w + 1):
-                g.px[(ex + i + shift, row + dy + (1 if mood == "blink" else 0))] = "e"
+    put = lambda x, y, c: g.px.__setitem__((x, y), c)
+    for ex, eye in ((7, FAR_EYE), (13, NEAR_EYE)):
+        x0, w = ex + shift, len(eye[0])
+        if mood in ("blink", "happy"):
+            for i in range(-1 if w > 1 else 0, w + 1 if w > 1 else 1):
+                arc = mood == "happy" and w > 1 and i in (-1, w)
+                put(x0 + i, row + 1 + (1 if arc else 0), "e")
         else:
-            for i in range(w):
-                g.px[(ex + i + shift, row + dy)] = "W" if i == 0 and w == 2 else "e"
-                g.px[(ex + i + shift, row + 1 + dy)] = "e"
-                g.px[(ex + i + shift, row + 2 + dy)] = "e"
-    g.px[(9, 18 + dy)] = "S"
-    g.px[(9, 19 + dy)] = "S"
-    for x in (9, 10, 11):
-        g.px[(x, 22 + dy)] = "m" if x != 9 else "S"
-    g.px[(14, 19 + dy)] = "b"
-    g.px[(15, 19 + dy)] = "b"
-    if glasses:
-        for x in range(5, 18):
-            g.px[(x, 13 + dy)] = "g"
-        for y in (14, 15, 16):
-            for x in (5, 10, 12, 17):
-                g.px[(x, y + dy)] = "g"
+            for j, line in enumerate(eye):
+                for i, c in enumerate(line):
+                    put(x0 + i, row + j, c)
+    brow = row - 2 - (1 if mood == "happy" else 0)
+    for x in (6, 7, 13, 14, 15):  # brows in the hair's dark tone.
+        put(x + shift, brow + (1 if x == 15 else 0), "d")
+    put(10, 17 + dy, "S")  # nose: a shaded ridge ending in a nostril shadow.
+    put(10, 18 + dy, "S")
+    put(10, 19 + dy, "O")
+    put(11, 19 + dy, "S")
+    if mood == "happy":
+        for x, y in ((8, 21), (9, 22), (10, 22), (11, 22), (12, 21)):
+            put(x, y + dy, "m")
+        put(10, 23 + dy, "b")
+    else:
+        put(8, 22 + dy, "O")  # mouth corner
+        put(9, 22 + dy, "m")
+        put(10, 22 + dy, "m")
+        put(11, 22 + dy, "m")
+        put(10, 23 + dy, "b")  # lower lip catches the light
+        put(11, 23 + dy, "S")
+    put(15, 19 + dy, "b")
+    put(16, 19 + dy, "b")
+    put(19, 25 + dy, "S")  # jaw shade under the cheek
+    put(20, 24 + dy, "S")
+    if glasses:  # two rims around the eyes joined by a bridge; the lenses stay clear.
+        top, low = row - 1, row + 3
+        for x0, x1 in ((5 + shift, 9 + shift), (12 + shift, 17 + shift)):
+            for x in range(x0, x1 + 1):
+                put(x, top, "g")
+                put(x, low, "g")
+            for y in range(top, low + 1):
+                put(x0, y, "g")
+                put(x1, y, "g")
+        put(10 + shift, row, "g")
+        put(11 + shift, row, "g")
+        for y in range(row, row + 2):  # temple arm toward the ear
+            put(18 + shift + (y - row), row - 1 + (y - row), "g")
 
 
 def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False) -> None:
     move = lambda cells: {(x, y + dy) for x, y in cells}
-    g.paint(move(limb((16, 23), (16, 27), 4)), lit("s", "S", lambda x, y: x - 16))  # neck
+    g.paint(move(limb((16, 25), (16, 30), 4)), lit("S", "O", lambda x, y: x - 16))  # neck, in the chin's shadow
     g.paint(move(_skull()), lit("s", "S", lambda x, y: x - 19 + (y - dy - 13) // 3))
     g.paint(move(ellipse(22.5, 16, 2.5, 3.2)), lit("s", "S", lambda x, y: x - 22))  # ear
     _face(g, mood, dy, glasses)
