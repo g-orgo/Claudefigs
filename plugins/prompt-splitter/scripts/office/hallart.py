@@ -68,7 +68,8 @@ def draw_glass(canvas: Canvas, panel, inside: Canvas, tick: int) -> None:
         shift = panel.shift(col)
         for j in range(wh):
             r, g, b = inside.rows[j + shift - middle + PADDING][i]
-            mix = 0.84 if (i + j - shine) % 34 > 3 else 0.62
+            mix = 0.84 if (i + j - shine) % 34 > 3 or r + g + b < 240 else 0.62  # the shine skips dark pixels (eyes,
+            # lines), so it never washes out one eye of a pair.
             canvas.put(panel.x + col, panel.y + shift + wy + j, (int(r * mix + GLASS[0] * (1 - mix)), int(g * mix + GLASS[1] * (1 - mix)), int(b * mix + GLASS[2] * (1 - mix))))
     for j in range(wh):
         canvas.put(panel.x + left + ww // 2, panel.y + middle + wy + j, OUTLINE)

@@ -71,7 +71,10 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool, lashes: bool = False) -> N
     for ex, eye in ((8, FAR_EYE), (13, NEAR_EYE)):
         x0, w = ex + shift, len(eye[0])
         if lashes:  # a lash dot beside the top of each eye, on its outer side; it follows a closed lid.
-            put(x0 - 2 if ex < 10 else x0 + w + 1, row + 1 if closed else row, "e")
+            if closed:  # an upward flick at the outer end of the lid line.
+                put(x0 - 2 if ex < 10 else x0 + w + 1, row, "e")
+            else:  # touching the top of the eye.
+                put(x0 - 1 if ex < 10 else x0 + w, row, "e")
         if mood in ("blink", "happy"):
             for i in range(-1, w + 1 if w > 1 else 1):  # a closed eye is a line, never a single dot.
                 arc = mood == "happy" and w > 1 and i in (-1, w)
@@ -164,7 +167,6 @@ def small_face(mood: str, dy: int, glasses: bool, lashes: bool, span: tuple) -> 
             px[(ex + out, row + 1 if closed else row)] = "e"
     px[(5, row + 3)] = "m"
     px[(6, row + 3)] = "m"
-    px[(7, row + 2)] = "b"
     if glasses:  # a thin mid-grey rim over the eyes; a dark one reads as a band at this size.
         for x in range(span[0], span[1] + 1):
             px[(x, row - 1)] = "Q"
