@@ -192,7 +192,7 @@ class Scene:
         room_of = {w.id: room for room in page_rooms for w in room.workers}
         fresh = []
         for actor, (col, top, width, height) in zip(actors, cells):
-            desk = (col + width // 2 - props.DESK_W // 2, (top + height) * 2 + 12)
+            desk = (col + width // 2 - props.DESK_W * props.SCALE // 2, (top + height) * 2 + 27)
             if actor.desk != desk:
                 actor.place(desk)
                 fresh.append(actor)
@@ -280,7 +280,7 @@ class Scene:
         actors, cells = self._sync()
         page_rooms = self._rooms()
         canvas = self._background(page_rooms).copy()
-        items = [(a.desk[1] + 20, 0, i, a) for i, a in enumerate(actors)] + [(a.foot[1], 1, i, a) for i, a in enumerate(actors) if not a.seated and not a.away]
+        items = [(a.desk[1] + 40, 0, i, a) for i, a in enumerate(actors)] + [(a.foot[1], 1, i, a) for i, a in enumerate(actors) if not a.seated and not a.away]
         for _, kind, _, actor in sorted(items, key=lambda item: item[:3]):
             (actor.draw_body if kind else actor.draw_station)(canvas, self.tick)
         for actor in actors:
@@ -293,7 +293,7 @@ class Scene:
         for actor, (col, top, width, height) in zip(actors, cells):
             worker = actor.worker
             color = RAINBOW[positions[worker.id] % len(RAINBOW)]
-            tail = actor.desk[0] + props.SEAT_DX + 8
+            tail = actor.desk[0] + props.SEAT_DX + 16
             offset = self._chat_offset(worker, width, height)
             draw_bubble(frame, col, top, width, height, worker, self.workers, color, tail, actor.note(), offset)
             if worker.id == self.selected_id:

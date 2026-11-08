@@ -9,7 +9,8 @@ METAL, METAL_D = (120, 128, 150), (84, 90, 112)
 
 # Size of a workstation: x, y of draw_desk are the desk's rear-left top corner.
 DESK_W, DESK_H = 42, 30
-SEAT_DX, SEAT_DY = 20, -8  # head top of a seated character, relative to the desk corner.
+SCALE = 2  # room furniture is drawn at twice its design size, so it matches the 34 px wide avatars.
+SEAT_DX, SEAT_DY = 46, -23  # avatar cell left and head top of a seated character, relative to the desk corner (canvas px).
 
 # Screen content per activity: rows of colored dashes that scroll.
 SCREENS = {
@@ -87,8 +88,50 @@ STUDY = Kit("biblioteca", (122, 58, 48), (166, 92, 74), (98, 44, 38), (92, 42, 3
 KITS = [CLASSIC, RETRO, GAMER, ATELIER, STUDY]
 
 
+class Scaled:
+    """Draws a piece designed at 1x at SCALE times its size around an origin: polygons are scaled point by point, so
+    their outlines stay 1 px thin; single pixels become SCALE x SCALE blocks."""
+
+    def __init__(self, inner, ox: int, oy: int, scale: int = SCALE):
+        self.inner, self.ox, self.oy, self.s = inner, ox, oy, scale
+        self.width, self.height = inner.width, inner.height
+        self.rows = _ScaledRows(self)
+
+    def map(self, x: int, y: int) -> tuple[int, int]:
+        return self.ox + (x - self.ox) * self.s, self.oy + (y - self.oy) * self.s
+
+    def put(self, x: int, y: int, color: Color) -> None:
+        bx, by = self.map(x, y)
+        for j in range(self.s):
+            for i in range(self.s):
+                self.inner.put(bx + i, by + j, color)
+
+
+class _ScaledRows:
+    def __init__(self, scaled: Scaled):
+        self.scaled = scaled
+
+    def __getitem__(self, y: int):
+        scaled = self.scaled
+        return _ScaledRow(scaled, y)
+
+
+class _ScaledRow:
+    def __init__(self, scaled: Scaled, y: int):
+        self.scaled, self.y = scaled, y
+
+    def __getitem__(self, x: int) -> Color:
+        bx, by = self.scaled.map(x, self.y)
+        inner = self.scaled.inner
+        if 0 <= bx < inner.width and 0 <= by < inner.height:
+            return inner.rows[by][bx]
+        return (0, 0, 0)  # off the canvas: nothing a piece could be testing for.
+
+
 def fill_poly(canvas: Canvas, points: list[tuple[int, int]], color: Color, edge: Color | None = OUTLINE) -> None:
     """Scanline fill of a convex polygon, with an optional outline."""
+    if isinstance(canvas, Scaled):
+        canvas, points = canvas.inner, [canvas.map(*p) for p in points]
     ys = [p[1] for p in points]
     for y in range(min(ys), max(ys) + 1):
         xs = []
@@ -111,6 +154,8 @@ def fill_poly(canvas: Canvas, points: list[tuple[int, int]], color: Color, edge:
 
 def _shade_area(canvas: Canvas, points: list[tuple[int, int]], factor: float = 0.82) -> None:
     """Darkens what is already painted inside a convex polygon: the soft contact shadow of a furniture."""
+    if isinstance(canvas, Scaled):
+        canvas, points = canvas.inner, [canvas.map(*p) for p in points]
     ys = [p[1] for p in points]
     for y in range(min(ys), max(ys) + 1):
         xs = []
@@ -401,9 +446,10 @@ class _Recorder:
             self.rows[y][x] = color
 
 
-def soft_piece(canvas: Canvas, draw, *args, **kwargs) -> None:
-    """Draws one piece with draw(recorder, ...) and turns its inner outlines into dark tones of their fills."""
+def soft_piece(canvas: Canvas, draw, *args, scale_at=None, **kwargs) -> None:
+    """Draws one piece with draw(recorder, ...) and turns its inner outlines into dark tones of their fills.
+    scale_at=(x, y) draws it at SCALE around that origin."""
     rec = _Recorder(canvas)
-    draw(rec, *args, **kwargs)
+    draw(Scaled(rec, *scale_at) if scale_at else rec, *args, **kwargs)
     for (x, y), color in soften_lines(rec.px).items():
         canvas.rows[y][x] = color

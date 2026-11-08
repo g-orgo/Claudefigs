@@ -202,7 +202,8 @@ class Hall:
             pose, eyes, _, _ = actor.seat_look(self.tick)
             if actor.worker.state == "waiting":
                 pose, eyes = "bob", ""
-            sprites.draw(inside, sx, 2 + hallart.PADDING, actor.look, pose, self.tick, "all" if pose in ("bob", "wait") else "back", eyes=eyes)
+            sprites.draw(inside, sx, 2 + hallart.PADDING, actor.look, pose, self.tick, "all" if pose in ("bob", "wait") else "back", eyes=eyes,
+                         small=True)  # the hall shows the avatars at half size, like a zoomed-out hotel view.
         hallart.draw_desk_edge(inside)
         hallart.draw_glass(canvas, panel, inside, self.tick + panel.x)
 
@@ -317,12 +318,12 @@ class Hall:
                 icon = ("dots", "", "heart")[((self.tick // 16) + slot) % 3]
             else:
                 pose, icon = "wait", ""
-            hx, hy = fx - 8, fy - 22
-            sprites.draw(canvas, hx, hy, actor.look, pose, self.tick, flip=actor.hall_flip)
+            hx, hy = fx - 8, fy - 39  # half-size avatar: 17 px wide, 40 px tall.
+            sprites.draw(canvas, hx, hy, actor.look, pose, self.tick, flip=actor.hall_flip, small=True)
             if icon:
                 props.draw_icon(canvas, hx + 16, hy - 3, icon)
             if sprites.frame_of(pose, self.tick)[4] == "steam":
-                props.draw_icon(canvas, hx + (0 if actor.hall_flip else 15), hy + 6 - (self.tick // 4) % 2, "steam")
+                props.draw_icon(canvas, hx + (2 if actor.hall_flip else 12), hy + 10 - (self.tick // 4) % 2, "steam")
 
     def _footer(self, frame: Frame) -> None:
         where = "Todas as sessões" if self.warehouse else f"Escritório: {self.place}"

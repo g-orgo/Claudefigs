@@ -6,11 +6,11 @@ from .life import Life, work_glance
 from .model import Worker
 
 BEAT = 16  # the waiter/target interaction has three beats of this many ticks.
-STAND = (36, 6)  # foot point beside the own desk, relative to its corner.
-SLOTS = [(46, 26), (16, 30), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
+STAND = (72, 12)  # foot point beside the own desk, relative to its corner (canvas px, furniture at 2x).
+SLOTS = [(92, 52), (32, 60), (-16, 52), (92, 12)]  # foot points around the desk of the awaited worker.
 POSE = {"code": "type", "term": "type", "web": "type", "doc": "read", "delegate": "phone"}
 SCREEN = {"code": "code", "term": "term", "web": "web", "doc": "doc", "delegate": "term"}
-BODY_H = 26  # head (11 rows) plus the standing body.
+BODY_H = 80  # head top to the soles of a standing avatar.
 
 
 def resolve_target(worker: Worker, workers: list[Worker]) -> Worker | None:
@@ -94,7 +94,7 @@ class Actor:
                 self.path.pop(0)
         elif self.target is not None:
             # The wait pose looks right unflipped, so it flips to look at someone on the left.
-            self.flip = self.target.desk[0] + 28 < self.foot[0]
+            self.flip = self.target.desk[0] + 56 < self.foot[0]
         else:
             self.flip = False
         if self.wants_seat and self.foot == self.stand_point:
@@ -138,18 +138,19 @@ class Actor:
     def head(self) -> tuple[int, int]:
         if self.seated:
             return self.desk[0] + props.SEAT_DX, self.desk[1] + props.SEAT_DY
-        return self.foot[0] - 8, self.foot[1] - BODY_H + 1
+        return self.foot[0] - 16, self.foot[1] - BODY_H + 1
 
     def draw_station(self, canvas: sprites.Canvas, tick: int) -> None:
         x, y = self.desk
         pose, eyes, _, screen = self.appearance(tick)
         hx, hy = self.head()
-        props.soft_piece(canvas, props.draw_chair, x, y, self.kit)
+        at = (x, y)
+        props.soft_piece(canvas, props.draw_chair, x, y, self.kit, scale_at=at)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "back", eyes=eyes)
-        props.soft_piece(canvas, props.draw_desk, x, y, self.kit)
-        props.soft_piece(canvas, props.draw_monitor, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle", kit=self.kit)
-        deskitems.draw_items(canvas, x, y, self.kit, self.seed, tick)
+        props.soft_piece(canvas, props.draw_desk, x, y, self.kit, scale_at=at)
+        props.soft_piece(canvas, props.draw_monitor, x, y, screen if self.seated else "idle", tick, glow=self.seated and screen != "idle", kit=self.kit, scale_at=at)
+        deskitems.draw_items(props.Scaled(canvas, x, y), x, y, self.kit, self.seed, tick)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "front", eyes=eyes)
 
@@ -169,8 +170,8 @@ class Actor:
         hx, hy = self.head()
         fx = sprites.frame_of(pose, tick)[4]
         if icon:
-            props.draw_icon(canvas, hx + 16, hy - 3, icon)
+            props.draw_icon(canvas, hx + 28, hy - 6, icon)
         if fx == "zzz":
-            props.draw_icon(canvas, hx + 16, hy + 8 - (tick // 8) % 3, "zzz")
+            props.draw_icon(canvas, hx + 28, hy + 18 - (tick // 8) % 3, "zzz")
         if fx == "steam":
-            props.draw_icon(canvas, hx + (0 if self.flip and not self.seated else 15), hy + 6 - (tick // 4) % 2, "steam")
+            props.draw_icon(canvas, hx + (20 if self.flip and not self.seated else 10), hy + 18 - (tick // 4) % 2, "steam")

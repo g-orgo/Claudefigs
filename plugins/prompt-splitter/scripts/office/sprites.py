@@ -1,7 +1,6 @@
 """Chibi characters of the office viewer: pixel art as text rows, recolored per Look."""
 from dataclasses import dataclass
 
-from . import avatar as A
 
 Color = tuple[int, int, int]
 
@@ -54,51 +53,9 @@ LOOKS = [
 ]
 
 # Head in a 3/4 view turned toward the monitor on the left: the far side (right) is in shade and shows an ear.
-# Head turned to the left, toward the monitor: features sit on the left half, the right half is nape and ear.
-HEAD = [
-    "....oooooooo....", "..oossssssssoo..", ".osssssssssssSo.", ".osssssssssssSo.", "ossssssssssssSo.",
-    "osssssssssSSoSo.", "osssssssssSSSSo.", ".ossssssssSSoSo.", ".osssssssssSSSo.",
-    "..osssssssssSSo.", "...oosssssSSoo..", ".....oooooo.....",
-]
-# Eye expressions as (row, text) overlays; the far eye is a narrow sliver, the near one is full.
-EYES = {
-    "open": [(5, ".eW...ei........"), (6, ".ee...e........."), (7, ".ei.............")],
-    "blink": [(6, ".ee...e.........")],
-    "happy": [(5, ".ee...e........."), (6, "e..e..e.........")],
-    "down": [(6, ".eW...e........."), (7, ".ee.............")],
-    "right": [(5, "..eW...e........"), (6, "..ee...e........"), (7, "..ei............")],
-}
-CHEEKS = (8, ".bbm..bb........")
-GLASSES = [(4, "..ooooo..ooooo.."), (5, "..o...o..o...o.."), (6, "..o...oooo...o.."), (7, "..o...o..o...o..")]
-
-# Hair rows start 2 rows above the head and 2 columns left of it.
-# name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx). Rows are avatar rows
-# padded into the 16-wide cell; overlays are (row from the body top, avatar column, rows).
-SIT = A.pad(A.SIT)
-STAND = A.pad(A.STAND)
-STEP_A, STEP_B = A.pad(A.STEP_A), A.pad(A.STEP_B)
-FRONT_ROW = len(A.SIT)  # the seated body stays behind the desk; only overlays are drawn over it.
-REST = [A.ARM_DESK]
-HANG = [A.ARM_HANG]
-POSES = {
-    "look": (9, [(SIT, 0, "open", REST, ""), (SIT, 0, "right", REST, ""), (SIT, 1, "open", REST, ""), (SIT, 0, "blink", REST, "")]),
-    "chat": (6, [(STAND, 0, "open", HANG, ""), (STAND, 1, "happy", [A.HAND_UP], ""), (STAND, 0, "right", [A.HAND_UP], ""), (STAND, 1, "open", HANG, "")]),
-    "bob": (5, [(STAND, 0, "happy", HANG, ""), (STAND, 1, "open", HANG, "")]),
-    "stand": (7, [(STAND, 0, "open", HANG, ""), (STAND, 1, "open", HANG, "")]),
-    "walk": (2, [(STEP_A, 0, "open", HANG, ""), (STAND, 1, "open", HANG, ""), (STEP_B, 0, "open", HANG, ""), (STAND, 1, "open", HANG, "")]),
-    "wait": (9, [(STAND, 0, "right", [A.CUP_LOW], ""), (STAND, 1, "right", [A.CUP_LOW], ""), (STAND, 1, "right", [A.CUP_UP], "steam"),
-                 (STAND, 0, "happy", [A.CUP_LOW], "")]),
-    "type": (2, [(SIT, 0, "down", [A.ARM_TAP], ""), (SIT, 1, "down", [A.ARM_DESK], "")]),
-    "read": (8, [(SIT, 0, "down", [A.SHEET, A.ARM_DESK], ""), (SIT, 1, "down", [A.SHEET, A.ARM_DESK], ""),
-                 (SIT, 1, "down", [A.SHEET, A.ARM_DESK], ""), (SIT, 0, "open", [A.SHEET, A.ARM_DESK], "")]),
-    "think": (10, [(SIT, 0, "open", [A.ARM_DESK, A.FAR_HAND_CHIN], "dots"), (SIT, 1, "right", [A.ARM_DESK, A.FAR_HAND_CHIN], "dots")]),
-    "phone": (6, [(SIT, 0, "open", [A.ARM_DESK, A.PHONE], ""), (SIT, 1, "happy", [A.ARM_DESK, A.PHONE], "")]),
-    "coffee": (12, [(SIT, 0, "happy", [A.ARM_DESK, A.CUP_LOW], "done"), (SIT, 1, "blink", [A.ARM_DESK, A.CUP_UP], "steam"),
-                    (SIT, 0, "open", [A.ARM_DESK, A.CUP_LOW], "done")]),
-    "nap": (14, [(SIT, 6, "blink", [A.FOLDED], "zzz"), (SIT, 7, "blink", [A.FOLDED], "zzz")]),
-    "slump": (14, [(SIT, 6, "blink", [A.FOLDED], "fail"), (SIT, 7, "blink", [A.FOLDED], "fail")]),
-}
-LYING = 4  # from this head drop on, the head rests on the desk and is drawn over it.
+from .poses import LYING, POSES  # noqa: E402  (joint frames of the hotel-style avatar)
+from . import poses as _poses  # noqa: E402
+from .rig import CELL_W  # noqa: E402
 
 
 OUTLINE: Color = (46, 34, 58)
@@ -153,7 +110,7 @@ class _Layer:
 def _palette(look: Look) -> dict[str, Color]:
     skin = rgb(look.skin)
     return {
-        "o": OUTLINE, "F": _tone(rgb(look.shoes), 1.6), "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
+        "o": OUTLINE, "F": _tone(rgb(look.shoes), 1.6), "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "r": _tone(rgb(look.hair_hi), 0.72), "w": _tone(rgb(look.hair_hi), 1.25), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
         "i": rgb(look.eyes), "b": (255, 150, 150), "m": (190, 90, 90), "t": rgb(look.top), "T": rgb(look.top_sh),
         "k": rgb(look.accent), "K": rgb(look.accent_sh), "p": rgb(look.pants), "P": tuple(max(0, c - 20) for c in rgb(look.pants)),
         "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195),
@@ -172,58 +129,38 @@ def frame_of(pose: str, tick: int) -> tuple:
     return frames[(tick // speed) % len(frames)]
 
 
-def _overlay(canvas: Canvas, x: int, y: int, row: int, col: int, rows: list[str], pal: dict, flip: bool) -> None:
-    """Stamps avatar-coordinate rows; a flipped character mirrors them inside its 16-wide cell."""
-    wide = max(len(r) for r in rows)
-    left = x + 3 + col
-    if flip:
-        left = x + 15 - (3 + col + wide - 1)
-    _stamp(canvas, left, y + row, rows, pal, flip, wide - 1)
+def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str = "all", flip: bool = False, eyes: str = "",
+         small: bool = False) -> str:
+    """Draws the avatar whose CELL_W wide cell starts at x and whose head top is at y; returns the frame's fx name.
 
-
-def _draw_head(canvas: Canvas, x: int, y: int, look: Look, pal: dict, dy: int, mood: str, tick: int, flip: bool) -> None:
-    rows, above = A.STYLES[look.hair_style]
-    if look.hair_style == "long" and dy < LYING:
-        _overlay(canvas, x, y + dy, A.BODY_TOP, 0, A.LONG_TAIL, pal, flip)
-    _overlay(canvas, x, y + dy - above, 0, -2, rows, pal, flip)
+    "back" goes behind the desk, "front" over it (arms, and a head lying on the desk). small draws it at half size,
+    like the hotel's zoomed-out view, for the hall and the warehouse."""
+    frame = frame_of(pose, tick)
+    mood = eyes or frame[3]
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
-    for row, col, eye in A.EYES[mood]:
-        _overlay(canvas, x, y + dy, row, col, eye, pal, flip)
-    for row, col, part in (A.MOUTH, A.CHEEK):
-        _overlay(canvas, x, y + dy, row, col, part, pal, flip)
-    if look.glasses:
-        _overlay(canvas, x, y + dy, *A.GLASSES, pal, flip)
-
-
-def _draw_arms(canvas: Canvas, x: int, y: int, arms: list, pal: dict, flip: bool) -> None:
-    for row, col, rows in arms:
-        _overlay(canvas, x, y, A.BODY_TOP + row, col, rows, pal, flip)
-
-
-def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str = "all", flip: bool = False, eyes: str = "") -> str:
-    """Draws a 16px wide character whose head top is at y; body starts at y+11. Returns the frame's fx name.
-
-    "back" goes behind the desk, "front" over it: arms and a head lying on the desk are repeated there."""
-    target, canvas = canvas, _Layer(shade=False)
-    try:
-        return _draw(canvas, x, y, look, pose, tick, layer, flip, eyes)
-    finally:
-        canvas.flush(target)
-
-
-def _draw(canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str, flip: bool, eyes: str) -> str:
-    body, dy, expression, arms, fx = frame_of(pose, tick)
+    grid = _poses.frame_grid(frame, look.hair_style, mood, look.glasses, layer)
     pal = _palette(look)
-    mood = eyes or expression
-    if layer in ("all", "front"):
-        _stamp(canvas, x, y + 11 + FRONT_ROW, body[FRONT_ROW:], pal, flip)
-    if layer == "front":
-        _draw_arms(canvas, x, y, arms, pal, flip)
-        if dy >= LYING:
-            _draw_head(canvas, x, y, look, pal, dy, mood, tick, flip)
-        return fx
-    _stamp(canvas, x, y + 11 + dy // 3, body[:FRONT_ROW], pal, flip)
-    _draw_head(canvas, x, y, look, pal, dy, mood, tick, flip)
-    _draw_arms(canvas, x, y, arms, pal, flip)
-    return fx
+    px = {p: pal[c] for p, c in grid.px.items()}
+    if small:
+        px = _half(px)
+    width = CELL_W // 2 if small else CELL_W
+    layer_px = _Layer(shade=False)
+    for (gx, gy), color in px.items():
+        layer_px.put(x + (width - 1 - gx if flip else gx), y + gy, color)
+    layer_px.flush(canvas)
+    return frame[4]
+
+
+def _half(px: dict) -> dict:
+    """Half-size copy: each 2x2 block keeps its most common color, the outline wins on the silhouette."""
+    blocks: dict = {}
+    for (x, y), color in px.items():
+        blocks.setdefault((x // 2, y // 2), []).append(color)
+    out = {}
+    for key, colors in blocks.items():
+        if len(colors) < 2:
+            continue
+        fills = [c for c in colors if c != OUTLINE]
+        out[key] = max(set(fills), key=fills.count) if len(fills) >= 3 or (fills and len(colors) == len(fills)) else OUTLINE
+    return out

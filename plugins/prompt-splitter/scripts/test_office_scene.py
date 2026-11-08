@@ -104,8 +104,8 @@ class SceneTests(unittest.TestCase):
         return [make(1, "working"), make(2, "waiting", [1]), make(3, "waiting", [2]), make(4, "done")]
 
     def test_per_page(self):
-        self.assertEqual(Scene(120, 40).per_page, 2)
-        self.assertEqual(Scene(200, 60).per_page, 8)
+        self.assertEqual(Scene(120, 40).per_page, 1)  # one 2x station fits a small terminal
+        self.assertEqual(Scene(400, 120).per_page, 8)
 
     def test_chain_reaches_the_worker_actually_working(self):
         workers = self.workers()
@@ -114,7 +114,7 @@ class SceneTests(unittest.TestCase):
         self.assertIsNone(resolve_target(workers[1], workers))
 
     def test_waiter_walks_to_a_slot_and_goes_back_when_released(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         workers = self.workers()
         scene.set_workers(workers)
         scene.step()
@@ -123,7 +123,7 @@ class SceneTests(unittest.TestCase):
             scene.step()
         self.assertFalse(waiter.seated)
         self.assertEqual(waiter.foot, waiter.goal)
-        self.assertLess(abs(waiter.foot[0] - host.desk[0]), 60)
+        self.assertLess(abs(waiter.foot[0] - host.desk[0]), 120)
         self.assertEqual(host.visitors, 2)
         workers[1].state = "working"
         for _ in range(200):
@@ -152,7 +152,7 @@ class SceneTests(unittest.TestCase):
         self.assertIn("código", " ".join(texts))
 
     def test_selection_stops_at_the_top_and_the_bottom(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers(self.workers())
         scene.select(-3)
         self.assertEqual(scene.selected().id, "w1")
@@ -204,7 +204,7 @@ class ParseMouseTests(unittest.TestCase):
 
 class HitTestTests(unittest.TestCase):
     def scene(self, count: int = 3) -> Scene:
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers([make_worker(i) for i in range(count)])
         return scene
 
@@ -239,12 +239,12 @@ class HitTestTests(unittest.TestCase):
 
 class HandleKeyTests(unittest.TestCase):
     def scene(self) -> Scene:
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers([make_worker(i) for i in range(3)])
         return scene
 
     def test_wheel_scrolls_the_selected_chat_and_keeps_page_and_selection(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers([make_worker(0, lines=[Line("claude", f"linha {n}") for n in range(60)])])
         page = scene.page()
         handle_key(scene, "\x1b[<64;1;1M")
@@ -289,7 +289,7 @@ class HandleKeyTests(unittest.TestCase):
 
 class ScrollSceneTests(unittest.TestCase):
     def scene(self, count: int = 1) -> Scene:
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         workers = [make_worker(0, lines=[Line("claude", f"linha {n}") for n in range(60)])]
         workers += [make_worker(i) for i in range(1, count)]
         scene.set_workers(workers)
@@ -489,12 +489,12 @@ class OpenSessionTests(unittest.TestCase):
         worker = make_worker(1)
         worker.attachable = True
         with mock.patch("claude_office.subprocess.Popen") as popen:
-            open_session(Scene(200, 60), worker)
+            open_session(Scene(400, 120), worker)
         self.assertEqual(popen.call_args[0][0],
                          ["setsid", "-f", "konsole", "--workdir", "/tmp", "-e", "claude", "attach", "w1"])
 
     def test_nothing_to_open_shows_a_notice(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         with mock.patch("claude_office.subprocess.Popen") as popen:
             open_session(scene, make_worker(1, state="waiting"))
         popen.assert_not_called()
@@ -546,9 +546,10 @@ class FurnitureTests(unittest.TestCase):
         x, y = 10, 20
         for pose in ("type", "look", "read", "think", "phone", "coffee"):
             for tick in range(0, 48, 4):
-                canvas = self.station(lambda c: props.draw_desk(c, x, y))
+                canvas = Canvas(160, 120, self.FLOOR)
+                props.draw_desk(props.Scaled(canvas, x, y), x, y)
                 sprites.draw(canvas, x + props.SEAT_DX, y + props.SEAT_DY, look, pose, tick, "front")
-                on_top = [(col, row) for row in range(y + 8, y + 15) for col in range(x + 20, x + 36) if canvas.rows[row][col] in skin]
+                on_top = [(col, row) for row in range(y + 16, y + 34) for col in range(x + 36, x + 76) if canvas.rows[row][col] in skin]
                 self.assertTrue(on_top, f"{pose} has no hand on the desk at tick {tick}")
 
     def test_head_on_the_desk_is_not_cut_by_it(self):
@@ -624,12 +625,12 @@ class RoomLayoutTests(unittest.TestCase):
         self.assertEqual([len(g) for g in groups], [2, 2])
 
     def test_shape_seven_on_four_columns_is_four_by_two(self):
-        pages = rooms.paginate(self.workers("demo", 7), 200, 60)
+        pages = rooms.paginate(self.workers("demo", 7), 400, 120)
         room = pages[0][0]
         self.assertEqual((room.cols, room.lines), (4, 2))
 
     def test_paginate_200x60_keeps_fitting_groups_whole(self):
-        pages = rooms.paginate(self.demo(), 200, 60)
+        pages = rooms.paginate(self.demo(), 400, 120)
         seen = {}
         for number, page in enumerate(pages):
             for room in page:
@@ -668,7 +669,7 @@ class RoomLayoutTests(unittest.TestCase):
         self.assertLessEqual(rooms.display_width(text), 14)
 
     def test_room_cells_stay_inside_the_room(self):
-        for page in rooms.paginate(self.demo(), 200, 60):
+        for page in rooms.paginate(self.demo(), 400, 120):
             for room in page:
                 for col, row, width, height in room.cells:
                     self.assertGreaterEqual(col, room.left)
@@ -677,7 +678,7 @@ class RoomLayoutTests(unittest.TestCase):
                     self.assertLessEqual(row + height, room.row + room.height)
 
     def test_clamp_foot_stays_inside_walls_for_every_slot(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers(self.demo())
         for room in scene._rooms():
             for worker in room.workers:
@@ -701,7 +702,7 @@ class RoomLayoutTests(unittest.TestCase):
                     self.assertLessEqual(leg_end + 3, room.bottom - wall_thick, (cols, rows, worker.id))
 
     def test_seven_item_demo_group_is_one_page_with_two_desk_lines_at_200x60(self):
-        pages = rooms.paginate(self.workers("demo", 7, "Reorganizar o modulo de login"), 200, 60)
+        pages = rooms.paginate(self.workers("demo", 7, "Reorganizar o modulo de login"), 400, 120)
         self.assertEqual(len(pages), 1)
         self.assertEqual(max(room.lines for room in pages[0]), 2)
 
@@ -724,7 +725,7 @@ class Phase2SceneTests(unittest.TestCase):
                 + self.workers("terceira", 2, "Limpar modulos antigos"))
 
     def test_selection_crosses_pages_and_stops_at_both_ends(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers(self.demo())
         self.assertEqual(scene.page(), 0)
         scene.select(100)
@@ -737,7 +738,7 @@ class Phase2SceneTests(unittest.TestCase):
         self.assertEqual(scene.page(), 0)
 
     def test_floor_pixel_inside_room_differs_from_corridor(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers(self.demo())
         room = scene._rooms()[0]
         background = scene._background(scene._rooms())
@@ -745,12 +746,12 @@ class Phase2SceneTests(unittest.TestCase):
         self.assertNotEqual(background.rows[y][x], scene.corridor.rows[y][x])
 
     def test_adjacent_rooms_have_different_palettes(self):
-        for page in rooms.paginate(self.demo(), 200, 60):
+        for page in rooms.paginate(self.demo(), 400, 120):
             for first, second in zip(page, page[1:]):
                 self.assertNotEqual(first.palette, second.palette)
 
     def test_wall_column_is_drawn_above_the_floor(self):
-        scene = Scene(200, 60)
+        scene = Scene(400, 120)
         scene.set_workers(self.demo())
         room = scene._rooms()[0]
         background = scene._background(scene._rooms())
@@ -760,7 +761,7 @@ class Phase2SceneTests(unittest.TestCase):
         self.assertEqual(background.rows[top][x], props.ROOM_PALETTES[room.palette][6])
 
     def test_room_shell_writes_nothing_outside_the_room(self):
-        page = rooms.paginate(self.demo(), 200, 60)[1]
+        page = rooms.paginate(self.demo(), 400, 120)[1]
         room = page[0]
         sentinel = (1, 2, 3)
         canvas = Canvas(200, 118, sentinel)
@@ -891,7 +892,7 @@ class HoverSelectionTests(unittest.TestCase):
 
     def test_show_selection_off_draws_no_white_ring(self):
         def white_cells(show: bool) -> int:
-            scene = Scene(200, 60)
+            scene = Scene(400, 120)
             scene.set_workers([make_worker(0), make_worker(1)])
             scene.selected_id = scene.visible()[0].id
             scene.show_selection = show

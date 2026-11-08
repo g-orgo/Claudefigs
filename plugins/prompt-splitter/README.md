@@ -68,6 +68,8 @@ Mouse: passar por cima de um balão, porta ou entrada seleciona o elemento, que 
 
 Enter e clique abrem a sessão no diretório do split, sempre com a caixa de texto para continuar a conversa. Sessão que o `claude agents` conhece, viva ou encerrada, abre com `claude attach <id>`, que acorda a encerrada. Sessão que saiu do registro (depois de um `claude rm`, por exemplo) abre com `claude --resume <id completo>`, lido da transcrição. Um split que ainda não começou não tem o que abrir, e o rodapé avisa.
 
+Os personagens seguem o estilo de hotel em pixel art: bonecos de 34 px de largura em 3/4, montados por partes (cabeça, cabelo, tronco, braços e pernas) em `office/rig.py`, `office/figure.py` e `office/poses.py`, com a mobília das salas em 2x. Cada mesa ocupa cerca de 92 colunas e 42 linhas: em 200x60 cabem 2 por página, e um terminal mais largo e alto mostra mais. No hall e no depósito os bonecos aparecem em meio tamanho, como numa vista afastada.
+
 Opções: `--demo` mostra splits de exemplo; `--snapshot arquivo.png --size 200x60 --tick 80 --view hall|warehouse|room` grava um quadro; `--bench N` mede o tempo por quadro.
 
 O comando vem do wrapper `scripts/claude-split.bash`, carregado pelo `~/.bashrc`, que repassa qualquer outro uso ao `claude` real:

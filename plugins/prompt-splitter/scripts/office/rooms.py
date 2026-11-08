@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 from office.model import Worker
 from office.term import char_width
 
-STATION_ROWS = 22  # rows of one desk station below its bubble
+STATION_ROWS = 42  # rows of one desk station below its bubble (2x furniture, 80 px avatars)
 BUBBLE_MIN, BUBBLE_MAX = 5, 14  # bubble rows
 LINE_MIN = STATION_ROWS + BUBBLE_MIN  # rows of one desk line with the smallest bubble
-PITCH_MIN, PITCH_MAX = 46, 60  # columns per item
+PITCH_MIN, PITCH_MAX = 92, 112  # columns per item
 SIDE_MARGIN = 8  # columns kept free on each side of a room
 CORRIDOR = 4  # columns between rooms in a shelf
 CHAMFER = 12  # pixels of the rear wall corner cut into the floor
