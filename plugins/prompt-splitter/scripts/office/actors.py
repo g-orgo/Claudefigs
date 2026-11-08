@@ -10,7 +10,7 @@ STAND = (36, 6)  # foot point beside the own desk, relative to its corner.
 SLOTS = [(46, 26), (16, 30), (-8, 26), (46, 6)]  # foot points around the desk of the awaited worker.
 POSE = {"code": "type", "term": "type", "web": "type", "doc": "read", "delegate": "phone"}
 SCREEN = {"code": "code", "term": "term", "web": "web", "doc": "doc", "delegate": "term"}
-BODY_H = 23
+BODY_H = 26  # head (11 rows) plus the standing body.
 
 
 def resolve_target(worker: Worker, workers: list[Worker]) -> Worker | None:

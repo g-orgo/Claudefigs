@@ -1,7 +1,7 @@
 """Chibi characters of the office viewer: pixel art as text rows, recolored per Look."""
 from dataclasses import dataclass
 
-from . import heads
+from . import avatar as A
 
 Color = tuple[int, int, int]
 
@@ -72,75 +72,31 @@ CHEEKS = (8, ".bbm..bb........")
 GLASSES = [(4, "..ooooo..ooooo.."), (5, "..o...o..o...o.."), (6, "..o...oooo...o.."), (7, "..o...o..o...o..")]
 
 # Hair rows start 2 rows above the head and 2 columns left of it.
-HAIR = {
-    "neat": ["", "......oooooooo", "....oohHHhhhhhoo", "...ohHHhhhhhhhhho", "...ohHhhhhhhhhhho",
-             "...ohhhhhhhhhshho", "...ohhhhsssssshho", "...oh..........ho"],
-    "bob": ["", "......oooooooo", "....oohHHhhhhhoo", "...ohHHhhhhhhhhho", "..ohHhhhhhhhhhhhho",
-            "..ohhhhhhhhhhhhhho", "..ohhhsshhssshhhho", "..ohh..........hho", "..ohh..........hho",
-            "..ohh..........hho", "..ohh..........hho", "...oo..........oo"],
-    "spiky": ["", ".......oo..oo", ".....oohHoohHoo", "...ooHHhhhHhhhhoo", "...ohHhhhhhhhhhho",
-              "...ohhhshhhshhhho", "...ohsssssssssho", "...o............o"],
-    "ponytail": ["", "......oooooooo", "....oohHHhhhhhooooo", "...ohHHhhhhhhhhhoHho", "...ohHhhhhhhhhhhohhho",
-                 "...ohhhhhhshhhhho.ohho", "...ohhsssssssshho..ohho", "...oh..........ho..ohho",
-                 "...................oho", "....................o"],
-    "bun": ["........oooo", ".......oHhho", "......oohhhoo", "....oohHHhhhhhoo", "...ohHhhhhhhhhhho",
-            "...ohhhhhhhhhhhho", "...ohsshhhhhsshho", "...o............o"],
-    "curly": ["......oooooo", "....oohHhhHhoo", "...ohHhhhhhhHho", "..ohhHhhhhHhhhho", "..ohhhhhhhhhhHho",
-              "..ohHhhshhhshhhho", "..ohhsssssssssho", "...oh..........ho", "...oo..........oo"],
-    "long": ["", "......oooooooo", "....oohHHhhhhhoo", "...ohHHhhhhhhhhho", "..ohHhhhhhhhhhhhho",
-             "..ohhhhhhshhhhhhho", "..ohhhsssssssshhho", "..ohh..........hho", "..ohh..........hho",
-             "..ohh..........hho", "..ohh..........hho", "..ohh..........hho", "..ohh..........hho", "..ooo..........ooo"],
-    "cap": ["", "......oooooooo", "....ooHHHHHHHHoo", "...oHHHHHHHHHHHHo", "...oHHHHHHHHHHHHo",
-            ".oooKKKKKKKKKKKKKo", ".oKKKKKKKKKKKKKKKo", "...oh..........ho"],
-}
-
-SHOULDERS = "...ootkktttoo..."
-TORSO = ["..ottkktttttto..", "..ottkkttttTTo..", "..ottKKttttTTo.."]
-ARMS_DOWN = ["..osotKKtttoso..", "...ootKKtttoo..."]
-LEGS = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "....oppooppo....", "...offfoofffo...", "...oooo..oooo..."]
-STEP_A = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "....oppoofffo...", "...offfooooo....", "...oooo........."]
-STEP_B = ["....oppppppo....", "....oppPPppo....", "....oppooppo....", "...offfooppo....", "....ooooofffo...", ".........oooo..."]
-LOW = ["..otToKKttoTto..", "..otoKKttTToto..", "...otoTTTToto..."]
-
-# name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx).
-# Body rows from index FRONT_ROW on are drawn after the desk, resting on it.
-FRONT_ROW = 6
-# Seated overlays are stamped again after the desk, so an arm always rests on top of the furniture.
-# The right arm is longer because the desk's rear edge runs down-right and its hand must still reach the keyboard.
-ARM_L = (2, 2, ["otTo", "otTo", "otTo", "otto", "osso", ".oo."])
-ARM_L_TAP = (2, 2, ["otTo", "otTo", "otTo", "otTo", "otto", "osso", ".oo."])
-ARM_R = (2, 10, ["oTto", "oTto", "oTto", "oTto", "oTto", "otto", "osso", ".oo."])
-ARM_R_TAP = (2, 10, ["oTto", "oTto", "oTto", "oTto", "otto", "osso", ".oo."])
-ARM_R_HOLD = (2, 10, ["oTto", "oTto", "oTto", "otto", "osso", ".oo."])
-SHEET = (4, 4, ["oooooooo", "oWWWWWWo", "oWggWWWo", "oWWWWWWo", "oWggggWo", "oWWWWWWo", "oooooooo"])
-FOLDED = (5, 1, [".ooooooooooooo", "ottTTTTTTTTttso", "ottttttttttttso", ".ooooooooooooo"])
-CUP_UP = (-2, 12, ["oooo.", "occoo", "occ.o", "oooo.", "oTo", "oTo"])
-CUP_LOW = (3, 12, ["oooo.", "occoo", "occ.o", "oooo."])
-PHONE = (-6, 14, ["ooo", "ono", "ono", "oso", "oTo", "oTo", "oto"])
-CHIN = (-1, 11, ["oso", "oso", "oTo", "oTo", "oTo", "oTo", "oTo", "oto", ".o."])
-sit = [SHOULDERS, *TORSO, *LOW[:2]]
-# The hair seen from the turned angle: past column 10 (the nape) the bangs' skin gaps are filled with hair.
-TURNED_HAIR = {name: [row[:10] + row[10:].replace("s", "h") for row in rows] for name, rows in HAIR.items()}
-standing = [SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS]
-HAND = (2, 12, ["oso", "oTo"])
-REST = [ARM_L, ARM_R]
+# name: (ticks per frame, frames); frame: (body rows, head dy, eyes, arm overlays, fx). Rows are avatar rows
+# padded into the 16-wide cell; overlays are (row from the body top, avatar column, rows).
+SIT = A.pad(A.SIT)
+STAND = A.pad(A.STAND)
+STEP_A, STEP_B = A.pad(A.STEP_A), A.pad(A.STEP_B)
+FRONT_ROW = len(A.SIT)  # the seated body stays behind the desk; only overlays are drawn over it.
+REST = [A.ARM_DESK]
+HANG = [A.ARM_HANG]
 POSES = {
-    "look": (9, [(sit, 0, "open", REST, ""), (sit, 0, "right", REST, ""), (sit, 1, "open", REST, ""), (sit, 0, "blink", REST, "")]),
-    "chat": (6, [(standing, 0, "open", [], ""), (standing, 1, "happy", [HAND], ""), (standing, 0, "right", [HAND], ""), (standing, 1, "open", [], "")]),
-    "bob": (5, [(standing, 0, "happy", [], ""), (standing, 1, "open", [], "")]),
-    "stand": (7, [([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
-    "walk": (2, [([SHOULDERS, *TORSO, *ARMS_DOWN, *STEP_A], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], ""),
-                 ([SHOULDERS, *TORSO, *ARMS_DOWN, *STEP_B], 0, "open", [], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "open", [], "")]),
-    "wait": (9, [([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "right", [CUP_LOW], ""), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "right", [CUP_LOW], ""),
-                 ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 1, "right", [CUP_UP], "steam"), ([SHOULDERS, *TORSO, *ARMS_DOWN, *LEGS], 0, "happy", [CUP_LOW], "")]),
-    "type": (2, [(sit, 0, "down", [ARM_L_TAP, ARM_R], ""), (sit, 1, "down", [ARM_L, ARM_R_TAP], "")]),
-    "read": (8, [(sit, 0, "down", [SHEET, ARM_L, ARM_R_HOLD], ""), (sit, 1, "down", [SHEET, ARM_L, ARM_R_HOLD], ""),
-                 (sit, 1, "down", [SHEET, ARM_L, ARM_R_HOLD], ""), (sit, 0, "open", [SHEET, ARM_L, ARM_R_HOLD], "")]),
-    "think": (10, [(sit, 0, "open", [ARM_L, CHIN], "dots"), (sit, 1, "right", [ARM_L, CHIN], "dots")]),
-    "phone": (6, [(sit, 0, "open", [ARM_L, PHONE], ""), (sit, 1, "happy", [ARM_L, PHONE], "")]),
-    "coffee": (12, [(sit, 0, "happy", [ARM_L, CUP_LOW], "done"), (sit, 1, "blink", [ARM_L, CUP_UP], "steam"), (sit, 0, "open", [ARM_L, CUP_LOW], "done")]),
-    "nap": (14, [(sit, 6, "blink", [FOLDED], "zzz"), (sit, 7, "blink", [FOLDED], "zzz")]),
-    "slump": (14, [(sit, 6, "blink", [FOLDED], "fail"), (sit, 7, "blink", [FOLDED], "fail")]),
+    "look": (9, [(SIT, 0, "open", REST, ""), (SIT, 0, "right", REST, ""), (SIT, 1, "open", REST, ""), (SIT, 0, "blink", REST, "")]),
+    "chat": (6, [(STAND, 0, "open", HANG, ""), (STAND, 1, "happy", [A.HAND_UP], ""), (STAND, 0, "right", [A.HAND_UP], ""), (STAND, 1, "open", HANG, "")]),
+    "bob": (5, [(STAND, 0, "happy", HANG, ""), (STAND, 1, "open", HANG, "")]),
+    "stand": (7, [(STAND, 0, "open", HANG, ""), (STAND, 1, "open", HANG, "")]),
+    "walk": (2, [(STEP_A, 0, "open", HANG, ""), (STAND, 1, "open", HANG, ""), (STEP_B, 0, "open", HANG, ""), (STAND, 1, "open", HANG, "")]),
+    "wait": (9, [(STAND, 0, "right", [A.CUP_LOW], ""), (STAND, 1, "right", [A.CUP_LOW], ""), (STAND, 1, "right", [A.CUP_UP], "steam"),
+                 (STAND, 0, "happy", [A.CUP_LOW], "")]),
+    "type": (2, [(SIT, 0, "down", [A.ARM_TAP], ""), (SIT, 1, "down", [A.ARM_DESK], "")]),
+    "read": (8, [(SIT, 0, "down", [A.SHEET, A.ARM_DESK], ""), (SIT, 1, "down", [A.SHEET, A.ARM_DESK], ""),
+                 (SIT, 1, "down", [A.SHEET, A.ARM_DESK], ""), (SIT, 0, "open", [A.SHEET, A.ARM_DESK], "")]),
+    "think": (10, [(SIT, 0, "open", [A.ARM_DESK, A.FAR_HAND_CHIN], "dots"), (SIT, 1, "right", [A.ARM_DESK, A.FAR_HAND_CHIN], "dots")]),
+    "phone": (6, [(SIT, 0, "open", [A.ARM_DESK, A.PHONE], ""), (SIT, 1, "happy", [A.ARM_DESK, A.PHONE], "")]),
+    "coffee": (12, [(SIT, 0, "happy", [A.ARM_DESK, A.CUP_LOW], "done"), (SIT, 1, "blink", [A.ARM_DESK, A.CUP_UP], "steam"),
+                    (SIT, 0, "open", [A.ARM_DESK, A.CUP_LOW], "done")]),
+    "nap": (14, [(SIT, 6, "blink", [A.FOLDED], "zzz"), (SIT, 7, "blink", [A.FOLDED], "zzz")]),
+    "slump": (14, [(SIT, 6, "blink", [A.FOLDED], "fail"), (SIT, 7, "blink", [A.FOLDED], "fail")]),
 }
 LYING = 4  # from this head drop on, the head rests on the desk and is drawn over it.
 
@@ -172,8 +128,9 @@ def soften_lines(px: dict) -> dict:
 class _Layer:
     """Collects one character's pixels so they can be shaded as a whole before reaching the canvas."""
 
-    def __init__(self):
+    def __init__(self, shade: bool = True):
         self.px: dict[tuple[int, int], Color] = {}
+        self.shade = shade  # characters are shaded by hand; small decor gets the automatic rims.
 
     def put(self, x: int, y: int, color: Color) -> None:
         self.px[(x, y)] = color
@@ -183,7 +140,7 @@ class _Layer:
         tone, one touching it on its left or above gets a highlight, which gives every pose a rounded volume."""
         px = soften_lines(self.px)
         for (x, y), color in px.items():
-            if color != OUTLINE:
+            if self.shade and color != OUTLINE:
                 right, below = px.get((x + 1, y), OUTLINE), px.get((x, y + 1), OUTLINE)
                 left, above = px.get((x - 1, y), OUTLINE), px.get((x, y - 1), OUTLINE)
                 if right == OUTLINE or below == OUTLINE:
@@ -196,7 +153,7 @@ class _Layer:
 def _palette(look: Look) -> dict[str, Color]:
     skin = rgb(look.skin)
     return {
-        "o": OUTLINE, "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
+        "o": OUTLINE, "F": _tone(rgb(look.shoes), 1.6), "d": _tone(rgb(look.hair), 0.72), "R": rgb(look.hair_hi), "s": skin, "S": _tone(skin, 0.84), "O": _tone(skin, 0.7), "h": rgb(look.hair), "H": rgb(look.hair_hi), "e": (40, 30, 60), "W": (255, 255, 255),
         "i": rgb(look.eyes), "b": (255, 150, 150), "m": (190, 90, 90), "t": rgb(look.top), "T": rgb(look.top_sh),
         "k": rgb(look.accent), "K": rgb(look.accent_sh), "p": rgb(look.pants), "P": tuple(max(0, c - 20) for c in rgb(look.pants)),
         "f": rgb(look.shoes), "c": (250, 250, 250), "n": (90, 200, 255), "g": (170, 175, 195),
@@ -215,29 +172,40 @@ def frame_of(pose: str, tick: int) -> tuple:
     return frames[(tick // speed) % len(frames)]
 
 
+def _overlay(canvas: Canvas, x: int, y: int, row: int, col: int, rows: list[str], pal: dict, flip: bool) -> None:
+    """Stamps avatar-coordinate rows; a flipped character mirrors them inside its 16-wide cell."""
+    wide = max(len(r) for r in rows)
+    left = x + 3 + col
+    if flip:
+        left = x + 15 - (3 + col + wide - 1)
+    _stamp(canvas, left, y + row, rows, pal, flip, wide - 1)
+
+
 def _draw_head(canvas: Canvas, x: int, y: int, look: Look, pal: dict, dy: int, mood: str, tick: int, flip: bool) -> None:
-    _stamp(canvas, x - 2, y + dy - 2, list(heads.head_rows(look.hair_style)), pal, flip, heads.W - 1)
+    rows, above = A.STYLES[look.hair_style]
+    if look.hair_style == "long" and dy < LYING:
+        _overlay(canvas, x, y + dy, A.BODY_TOP, 0, A.LONG_TAIL, pal, flip)
+    _overlay(canvas, x, y + dy - above, 0, -2, rows, pal, flip)
     if mood != "blink" and (tick + x) % 41 < 2:
         mood = "blink"
-    for row, text in heads.EYES[mood]:
-        _stamp(canvas, x, y + dy + row, [text], pal, flip)
-    _stamp(canvas, x, y + dy + heads.CHEEKS[0], [heads.CHEEKS[1]], pal, flip)
+    for row, col, eye in A.EYES[mood]:
+        _overlay(canvas, x, y + dy, row, col, eye, pal, flip)
+    for row, col, part in (A.MOUTH, A.CHEEK):
+        _overlay(canvas, x, y + dy, row, col, part, pal, flip)
     if look.glasses:
-        for row, text in heads.GLASSES:
-            _stamp(canvas, x, y + dy + row, [text], pal, flip)
+        _overlay(canvas, x, y + dy, *A.GLASSES, pal, flip)
 
 
 def _draw_arms(canvas: Canvas, x: int, y: int, arms: list, pal: dict, flip: bool) -> None:
-    for top, col, rows in arms:
-        wide = max(len(row) for row in rows)
-        _stamp(canvas, x + (16 - col - wide if flip else col), y + 11 + top, rows, pal, flip, wide - 1)
+    for row, col, rows in arms:
+        _overlay(canvas, x, y, A.BODY_TOP + row, col, rows, pal, flip)
 
 
 def draw(canvas: Canvas, x: int, y: int, look: Look, pose: str, tick: int, layer: str = "all", flip: bool = False, eyes: str = "") -> str:
     """Draws a 16px wide character whose head top is at y; body starts at y+11. Returns the frame's fx name.
 
     "back" goes behind the desk, "front" over it: arms and a head lying on the desk are repeated there."""
-    target, canvas = canvas, _Layer()
+    target, canvas = canvas, _Layer(shade=False)
     try:
         return _draw(canvas, x, y, look, pose, tick, layer, flip, eyes)
     finally:
