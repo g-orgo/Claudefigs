@@ -17,8 +17,8 @@ WAVE = (((6, 42), (6, 51)), ((29, 40), (30, 29)), "")
 CUP_LOW = (((6, 42), (6, 51)), ((25, 44), (20, 45)), "cup")
 CUP_UP = (((6, 42), (6, 51)), ((22, 38), (13, 30)), "cup")
 DESK = ((4, 41), (-2, 47))  # back hand on the keyboard
-TYPE_A = (DESK, ((21, 45), (12, 49)), "")
-TYPE_B = (((4, 40), (-1, 45)), ((21, 44), (13, 47)), "")
+TYPE_A = (DESK, ((25, 45), (17, 50)), "")
+TYPE_B = (((4, 40), (-1, 45)), ((25, 44), (18, 48)), "")
 READ = (((3, 38), (-3, 41)), ((20, 42), (8, 43)), "sheet")
 THINK = (DESK, ((22, 40), (14, 26)), "")
 PHONE = (DESK, ((28, 36), (23, 22)), "phone")
@@ -79,7 +79,12 @@ def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, f
             F.head(g, style, mood, dy, glasses, face, lashes)
         F.arm(g, F.SHOULDER_FRONT, *front)
     else:
-        F.arm(g, F.SHOULDER_BACK, *back)
+        # The back arm sits behind the torso: over the desk only its part outside the torso shows, otherwise it
+        # would be painted across the chest.
+        behind = Grid()
+        F.arm(behind, F.SHOULDER_BACK, *back)
+        chest = polygon(F.TORSO)
+        g.px.update({p: c for p, c in behind.px.items() if p not in chest})
         F.arm(g, F.SHOULDER_FRONT, *front)
         if lying:
             F.head(g, style, mood, dy, glasses, face, lashes)
