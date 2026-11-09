@@ -255,28 +255,35 @@ class LifeTests(unittest.TestCase):
         self.assertNotIn("raise", sprites.POSES)
         self.assertNotIn("stretch", sprites.POSES)
 
-    def test_idle_characters_leave_and_come_back_while_busy_ones_stay(self):
+    def test_idle_characters_leave_once_and_stay_out_while_idle(self):
         office = Office(200, 60)
         office.set_workers([worker("idle", "p"), worker("busy", "p", state="working", index=2)])
         idle, busy = office.scene.actors["idle"], office.scene.actors["busy"]
-        kinds, seen_out, seen_back = set(), False, False
+        kinds, seen_out, seen_back = [], False, False
         for _ in range(3000):
             office.step()
-            kinds.add(idle.life.kind)
+            kinds.append(idle.life.kind)
+            if seen_out:
+                seen_back = seen_back or not idle.away
             seen_out = seen_out or idle.away
-            seen_back = seen_back or (seen_out and not idle.away)
             self.assertEqual(busy.life.kind, "work")
             self.assertFalse(busy.away)
-        self.assertIn("out", kinds)
-        self.assertTrue(seen_out and seen_back)
+        self.assertLessEqual(set(kinds), {"work", "desk", "out"})
+        settled = [kind for kind in kinds if kind != "work"]
+        self.assertLessEqual(sum(1 for a, b in zip(settled, settled[1:]) if a != b), 1)
+        self.assertFalse(seen_back)
 
     def test_a_character_that_returns_to_work_comes_back_at_once(self):
         office = Office(200, 60)
         item = worker("idle", "p")
         office.set_workers([item])
         actor = office.scene.actors["idle"]
-        while not actor.away:
+        actor.life.kind, actor.life.decided = "out", True
+        for _ in range(500):
             office.step()
+            if actor.away:
+                break
+        self.assertTrue(actor.away)
         item.state = "working"
         office.set_workers([item])
         office.mode = "warehouse"

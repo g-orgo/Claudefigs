@@ -122,10 +122,6 @@ class Actor:
         beat = (tick // BEAT) % 3
         if self.moving:
             return "walk", "", "", "idle"
-        if self.life.kind == "visit" and self.target is not None:
-            return "chat", "", ("dots", "", "heart")[beat], "idle"
-        if self.life.kind == "roam":
-            return "bob" if (self.seed + tick // 24) % 3 == 0 else "stand", "", "", "idle"
         if self.target is None:
             return "wait", "", "dots", "idle"
         if beat == 0:
@@ -145,7 +141,7 @@ class Actor:
         pose, eyes, _, screen = self.appearance(tick)
         hx, hy = self.head()
         at = (x, y)
-        props.soft_piece(canvas, props.draw_chair, x, y, self.kit, scale_at=at)
+        props.soft_piece(canvas, props.draw_chair, x, y, self.kit, scale_at=at, occupied=self.seated)
         if self.seated:
             sprites.draw(canvas, hx, hy, self.look, pose, tick, "back", eyes=eyes)
         props.soft_piece(canvas, props.draw_desk, x, y, self.kit, scale_at=at)

@@ -40,19 +40,21 @@ def draw_shell(canvas: Canvas, x: int, y: int, wall: Color, roof: bool = True) -
         for t in range(1, BAY_W - 1):  # lit rim where the roof meets the front wall.
             canvas.put(x + t, y - 1, shade(wall, 1.2))
     box(canvas, x, y, BAY_W, BAY_H, wall)
+    rect(canvas, x + 1, y + 1, BAY_W - 2, 1, shade(wall, 1.16))  # highlight under the cap edge, lit from top-left.
     rect(canvas, x + 1, y + BAY_H - 3, BAY_W - 2, 2, shade(wall, 0.62))
 
 
 def draw_office_front(canvas: Canvas, x: int, y: int, wall: Color, roof: bool = True) -> None:
     draw_shell(canvas, x, y, wall, roof)
     dx, dy, dw, dh = DOOR
-    box(canvas, x + dx, y + dy, dw, dh, WOOD)
-    box(canvas, x + dx + 3, y + dy + 3, dw - 6, 8, GLASS)
+    box(canvas, x + dx, y + dy, dw, dh, WOOD, shade(WOOD_D, 0.7))
+    rect(canvas, x + dx + 1, y + dy + 1, dw - 2, 1, shade(WOOD, 1.16))  # lit top rim of the leaf.
+    box(canvas, x + dx + 3, y + dy + 3, dw - 6, 8, GLASS, WOOD_D)
+    rect(canvas, x + dx + 4, y + dy + 4, 2, 1, (240, 250, 255))  # glass glint.
     rect(canvas, x + dx + 3, y + dy + 14, dw - 6, 1, WOOD_D)
     rect(canvas, x + dx + dw - 3, y + dy + 13, 2, 2, (250, 220, 120))
     wx, wy, ww, wh = WINDOW
-    box(canvas, x + wx - 1, y + wy - 1, ww + 2, wh + 2, INSIDE)
-
+    box(canvas, x + wx - 1, y + wy - 1, ww + 2, wh + 2, INSIDE, shade(wall, 0.55))
 
 def window_left(panel) -> int:
     return BAY_W - WINDOW[0] - WINDOW[2] if panel.mirror else WINDOW[0]
@@ -281,6 +283,8 @@ def draw_warehouse_floor(canvas: Canvas) -> None:
     for y in range(canvas.height):
         for x in range(canvas.width):
             canvas.rows[y][x] = light if ((x + 2 * y) // 36 + (2 * y - x) // 36) % 2 == 0 else dark
+            if (x + 2 * y) % 36 == 0 or (2 * y - x) % 36 == 0:  # iso 2:1 tile seams.
+                canvas.rows[y][x] = shade(light, 0.84)
     for x in range(canvas.width):
         if (x // 6) % 2 == 0:
             rect(canvas, x, canvas.height - 4, 1, 2, (240, 196, 60))

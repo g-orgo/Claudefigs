@@ -169,9 +169,10 @@ def _shade_area(canvas: Canvas, points: list[tuple[int, int]], factor: float = 0
                 canvas.rows[y][col] = (int(r * factor), int(g * factor), int(b * factor))
 
 
-def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
+def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC, occupied: bool = False) -> None:
     """Swivel office chair facing down-left, drawn at full resolution even inside a Scaled piece: a rounded cushion,
-    a tufted backrest behind the sitter, a gas lift and a five-spoke base on casters."""
+    a tufted backrest behind the sitter, a gas lift and a five-spoke base on casters. An empty chair also shows the
+    far armrest (a mirror of the near one); a seated sitter hides it, so only the near armrest is drawn then."""
     from .rig import Grid, ellipse, limb, polygon
     if isinstance(canvas, Scaled):
         canvas = canvas.inner
@@ -200,6 +201,11 @@ def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC) -> None:
     g.paint(ellipse(16.5, 40, 15.5, 7) | polygon([(1, 36), (32, 36), (32, 40), (1, 40)]),
             lambda u, v: "l" if u >= 17 else "c")
     g.paint(ellipse(16.5, 36, 15.5, 7), lambda u, v: "C" if v <= 31 or u <= 4 else "c")
+    if not occupied:  # far armrest: the near one shifted 15 px along the seat's left edge, so both run parallel.
+        # Drawn over the cushion but before the near armrest; the backrest never reaches this side of the seat.
+        g.paint(limb((9, 40), (9, 34), 2), lambda u, v: "m")
+        g.paint(polygon([(18 - 15, 34), (29 - 15, 28), (32 - 15, 29), (32 - 15, 31), (21 - 15, 37), (18 - 15, 36)]),
+                lambda u, v: "C" if v + (u - 3) // 2 <= 34 else "l")
     g.paint(limb((24, 40), (24, 34), 2), lambda u, v: "m")  # near armrest: a post and a padded rest.
     g.paint(polygon([(18, 34), (29, 28), (32, 29), (32, 31), (21, 37), (18, 36)]),
             lambda u, v: "C" if v + (u - 18) // 2 <= 34 else "l")
@@ -398,17 +404,19 @@ def draw_room_shell(canvas: Canvas, room, sign_width: int) -> None:
         b = base(x)
         t = b - height
         if x < left + 2 * k:
-            wall = _ramp(wall_left)[0]  # lit left face
+            wall = _ramp(wall_left)[1]  # left face: the mid tone
         elif x > right - 2 * k:
             wall = _ramp(wall_right)[2]  # shaded right face
         else:
             wall = far
         for y in range(t, b):
-            if y - t < 3:
+            if y - t == 1:
+                color = _ramp(cap)[0]  # 1 px highlight inside the wall-top cap
+            elif y - t < 3:
                 color = cap
             elif y - t == 3:
                 color = _shade(wall, 0.8)
-            elif y >= b - 2:  # baseboard: two darker pixels along the foot of the wall
+            elif y == b - 1:  # baseboard: one darker pixel line where the wall meets the floor
                 color = _ramp(wall)[3]
             else:
                 color = wall

@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from claude_office import DRAW_S, FRAME_S, PARTIAL, FrameClock, handle_key, keys_of, open_session, parse_mouse, session_command
-from office import actors, deskitems, props, sprites
+from office import actors, deskitems, props, sprites, life
 from office.model import Line, Worker
 from office.actors import SLOTS, resolve_target
 from office.bubble import body_rows, chat_geometry
@@ -168,6 +168,27 @@ class SceneTests(unittest.TestCase):
                 scene.step()
             frame = scene.render()
             self.assertEqual((frame.cols, frame.nrows), size)
+
+
+class IdlePlanTests(unittest.TestCase):
+    def test_idle_plan_changes_at_most_once_and_never_roams_or_visits(self):
+        class Stub:
+            def __init__(self, seed):
+                self.worker = type("W", (), {"id": f"w{seed}", "state": "done"})()
+                self.life = life.Life(seed)
+
+        for seed in (3, 17, 41):
+            actor = Stub(seed)
+            kinds = []
+            for tick in range(1, 6000):
+                life.advance([actor], tick, {actor.worker.id: "g"})
+                kinds.append(actor.life.kind)
+            self.assertNotIn("roam", kinds)
+            self.assertNotIn("visit", kinds)
+            settled = [kind for kind in kinds if kind != "work"]
+            self.assertTrue(settled)
+            self.assertLessEqual(set(settled), {"desk", "out"})
+            self.assertLessEqual(sum(1 for a, b in zip(settled, settled[1:]) if a != b), 1)
 
 
 class KeysOfTests(unittest.TestCase):

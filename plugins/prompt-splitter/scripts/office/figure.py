@@ -2,7 +2,7 @@
 from .rig import Grid, ellipse, limb, lit, polygon
 
 HEAD_C, HEAD_R = (16.0, 13.0), (11.5, 12.5)
-SHOULDER_BACK, SHOULDER_FRONT = (9, 31), (24, 34)  # up-left (far) and down-right (near) shoulders.
+SHOULDER_BACK, SHOULDER_FRONT = (10, 34), (23, 36)  # up-left (far) and down-right (near) shoulders.
 HIP_BACK, HIP_FRONT = (12, 50), (20, 52)
 TORSO = [(9, 27), (15, 26), (25, 30), (26, 34), (24, 52), (9, 50), (7, 32)]
 
@@ -68,7 +68,7 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool, lashes: bool = False) -> N
     shift = 1 if mood == "right" else 0
     put = lambda x, y, c: g.px.__setitem__((x, y), c)
     closed = mood in ("blink", "happy")
-    for ex, eye in ((8, FAR_EYE), (13, NEAR_EYE)):
+    for ex, eye in ((7, FAR_EYE), (13, NEAR_EYE)):
         x0, w = ex + shift, len(eye[0])
         if lashes:  # a lash dot beside the top of each eye, on its outer side; it follows a closed lid.
             if closed:  # an upward flick at the outer end of the lid line.
@@ -98,16 +98,17 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool, lashes: bool = False) -> N
     put(16, 19 + dy, "b")
     put(19, 25 + dy, "S")  # jaw shade under the cheek
     put(20, 24 + dy, "S")
-    if glasses:  # two closed rectangular rims sharing the middle column as the bridge, 1 px of clear lens
-        top, low = row - 2, row + 4  # around each eye, and a temple arm toward the ear.
-        for x0, x1 in ((6 + shift, 11 + shift), (11 + shift, 16 + shift)):
+    if glasses:  # two closed rectangular rims sharing one column as the bridge, 1 px of clear lens on all four
+        top, low = row - 2, row + 4  # sides of each eye, and a temple arm from the outer rim toward the ear.
+        for x0, x1 in ((5 + shift, 11 + shift), (11 + shift, 17 + shift)):
             for x in range(x0, x1 + 1):
                 put(x, top, "G")
                 put(x, low, "G")
             for y in range(top, low + 1):
                 put(x0, y, "G")
                 put(x1, y, "G")
-        put(17 + shift, top, "G")
+        for x in range(18 + shift, 20 + shift):  # temple, ends where the hair or ear starts
+            put(x, top, "G")
 
 
 def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False, face: bool = True, lashes: bool = False) -> None:
@@ -167,12 +168,11 @@ def small_face(mood: str, dy: int, glasses: bool, lashes: bool, span: tuple) -> 
             px[(ex + out, row + 1 if closed else row)] = "e"
     px[(5, row + 3)] = "m"
     px[(6, row + 3)] = "m"
-    if glasses:  # a closed mid-grey frame around both eye dots: rails above and below, sides at the face edges and a
-        # bridge on the top rail; the lenses stay skin, since a rim per eye fills this small face like a mask.
-        for x in range(3, 9):
-            px[(x, row - 1)] = "Q"
-            px[(x, row + 2)] = "Q"
-        for y in range(row - 1, row + 3):
-            px[(2, y)] = "Q"
-            px[(9, y)] = "Q"
+    if glasses:  # one mid-grey rim per eye: a top bar meeting at the bridge and an outer post beside the eye.
+        # The rim is lighter than the eyes, so it never merges with them into a band; nothing goes below the eyes.
+        for ex, out in ((4, -1), (7, 1)):
+            for x in (ex - 1, ex, ex + 1):
+                px[(x, row - 1)] = "Q"
+            px[(ex + out, row)] = "Q"
+            px[(ex + out, row + 1)] = "Q"
     return px

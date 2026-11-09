@@ -215,15 +215,6 @@ class Scene:
                 continue
             if actor.away:
                 actor.away, actor.seated, actor.foot = False, False, door
-            if life.kind == "roam":
-                actor.goal = grid.nearest_free(room.clamp_foot(room.left + int(life.spot[0] * (room.right - room.left)), room.floor_y + int(life.spot[1] * (room.bottom - room.floor_y))))
-                continue
-            if life.kind == "visit" and life.mate in actors and life.mate.visitors < len(SLOTS):
-                dx, dy = SLOTS[life.mate.visitors]
-                actor.goal = grid.nearest_free(room.clamp_foot(life.mate.desk[0] + dx, life.mate.desk[1] + dy))
-                actor.target = life.mate
-                life.mate.visitors += 1
-                continue
             if actor.worker.state != "waiting":
                 continue
             target = resolve_target(actor.worker, self.workers)

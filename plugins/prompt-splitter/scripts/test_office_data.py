@@ -328,6 +328,27 @@ class Ordering(unittest.TestCase):
         self.assertEqual([w.group for w in data.order_workers(items)], ["b", "a"])
 
 
+class CoordinatorRoom(unittest.TestCase):
+    def record(self, wid, group, parent=""):
+        item = {"id": wid, "name": "split-" + wid, "cwd": "/tmp", "group": group,
+                "started": NOW - 1000, "state": "running"}
+        if parent:
+            item["parent"] = parent
+        return item
+
+    def test_coordinator_room_hides_once_children_exist(self):
+        full = "26506da4-42df-4eed-92af-c6e836816973"
+        records = [self.record("26506da4", "coord"), self.record("c1", "kids", full),
+                   self.record("c2", "kids", full)]
+        workers = data.build_workers(records, {}, NOW, read_lines=lambda _path: [])
+        self.assertEqual({w.group for w in workers}, {"kids"})
+        self.assertEqual({w.id for w in workers}, {"c1", "c2"})
+
+    def test_lone_coordinator_stays_visible(self):
+        workers = data.build_workers([self.record("26506da4", "coord")], {}, NOW, read_lines=lambda _path: [])
+        self.assertEqual([w.id for w in workers], ["26506da4"])
+
+
 class DemoTests(unittest.TestCase):
     def test_demo_covers_all_states(self):
         workers = DemoSource().snapshot()

@@ -386,6 +386,15 @@ def room_title_of(rec: dict, now: float | None = None) -> str:
     return title
 
 
+def is_parent_record(worker: Worker, parents: set[str]) -> bool:
+    """True when this worker is the parent session of another loaded record, by short or full id."""
+    for value in (worker.id, worker.session_id):
+        if value and any(parent == value or parent.startswith(value + "-") or value.startswith(parent + "-")
+                         for parent in parents):
+            return True
+    return False
+
+
 def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=default_read_lines, cwd: str | None = None) -> list[Worker]:
     """Map split records, live agents and transcripts into ordered Workers. Pure apart from file reads."""
     workers: list[Worker] = []
@@ -421,7 +430,10 @@ def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=d
             parent=str(rec.get("parent") or ""),
             in_cwd=record_in_cwd(rec, cwd),
         ))
-    return order_workers(workers)
+    parents = {str(rec.get("parent") or "") for rec in records}
+    parents.discard("")
+    # A coordinator that already split into loaded children keeps no room of its own.
+    return order_workers([w for w in workers if not is_parent_record(w, parents)])
 
 
 def full_session_id(session_id: str) -> str:
