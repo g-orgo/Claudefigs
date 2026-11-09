@@ -23,7 +23,7 @@ READ = (((3, 38), (-3, 41)), ((20, 42), (8, 43)), "sheet")
 THINK = (DESK, ((22, 40), (14, 26)), "")
 PHONE = (DESK, ((28, 36), (23, 22)), "phone")
 SIP_LOW = (DESK, ((21, 45), (12, 46)), "cup")
-SIP_UP = (DESK, ((20, 38), (11, 28)), "cup")
+SIP_UP = (DESK, ((20, 39), (11, 30)), "cup")  # the cup rim stays at the mouth, clear of the eyes
 FOLDED = (((2, 46), (12, 47)), ((24, 47), (12, 49)), "")
 
 

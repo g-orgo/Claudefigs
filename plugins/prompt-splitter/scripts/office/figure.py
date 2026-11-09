@@ -98,16 +98,16 @@ def _face(g: Grid, mood: str, dy: int, glasses: bool, lashes: bool = False) -> N
     put(16, 19 + dy, "b")
     put(19, 25 + dy, "S")  # jaw shade under the cheek
     put(20, 24 + dy, "S")
-    if glasses:  # rims above and below each eye, the outer temple and a bridge; no inner sides, which read as bars.
-        top, low = row - 2, row + 4  # a pixel of clear lens around the eye, so the eye stays a separate dot.
-        for x0, x1 in ((6 + shift, 10 + shift), (12 + shift, 17 + shift)):
+    if glasses:  # two closed rectangular rims sharing the middle column as the bridge, 1 px of clear lens
+        top, low = row - 2, row + 4  # around each eye, and a temple arm toward the ear.
+        for x0, x1 in ((6 + shift, 11 + shift), (11 + shift, 16 + shift)):
             for x in range(x0, x1 + 1):
                 put(x, top, "G")
                 put(x, low, "G")
-        for y in range(top, low + 1):
-            put(17 + shift, y, "G")
-        put(11 + shift, row, "G")  # bridge
-        put(18 + shift, row - 2, "G")  # temple arm toward the ear
+            for y in range(top, low + 1):
+                put(x0, y, "G")
+                put(x1, y, "G")
+        put(17 + shift, top, "G")
 
 
 def head(g: Grid, style: str, mood: str, dy: int = 0, glasses: bool = False, face: bool = True, lashes: bool = False) -> None:
@@ -167,7 +167,12 @@ def small_face(mood: str, dy: int, glasses: bool, lashes: bool, span: tuple) -> 
             px[(ex + out, row + 1 if closed else row)] = "e"
     px[(5, row + 3)] = "m"
     px[(6, row + 3)] = "m"
-    if glasses:  # a thin mid-grey rim over the eyes; a dark one reads as a band at this size.
-        for x in range(span[0], span[1] + 1):
+    if glasses:  # a closed mid-grey frame around both eye dots: rails above and below, sides at the face edges and a
+        # bridge on the top rail; the lenses stay skin, since a rim per eye fills this small face like a mask.
+        for x in range(3, 9):
             px[(x, row - 1)] = "Q"
+            px[(x, row + 2)] = "Q"
+        for y in range(row - 1, row + 3):
+            px[(2, y)] = "Q"
+            px[(9, y)] = "Q"
     return px
