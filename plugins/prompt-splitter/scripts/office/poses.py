@@ -19,7 +19,7 @@ CUP_UP = (((6, 42), (6, 51)), ((22, 38), (13, 30)), "cup")
 DESK = ((4, 41), (-2, 47))  # back hand on the keyboard
 TYPE_A = (DESK, ((25, 45), (17, 50)), "")
 TYPE_B = (((4, 40), (-1, 45)), ((25, 44), (18, 48)), "")
-READ = (((3, 38), (-3, 41)), ((20, 42), (8, 43)), "sheet")
+READ = (((4, 41), (-1, 46)), ((24, 45), (15, 49)), "sheet")  # hands resting on a sheet lying on the desk
 THINK = (DESK, ((22, 40), (14, 26)), "")
 PHONE = (DESK, ((28, 36), (23, 22)), "phone")
 SIP_LOW = (DESK, ((21, 45), (12, 46)), "cup")
@@ -59,9 +59,9 @@ def _prop(g: Grid, kind: str, hand: tuple) -> None:
         g.paint(polygon([(hx - 3, hy - 6), (hx + 2, hy - 6), (hx + 2, hy), (hx - 3, hy)]), lambda x, y: "W" if y == hy - 5 else "c")
     elif kind == "phone":
         g.paint(polygon([(hx - 1, hy - 7), (hx + 2, hy - 7), (hx + 2, hy + 1), (hx - 1, hy + 1)]), lambda x, y: "n" if y < hy - 2 else "g")
-    elif kind == "sheet":
-        g.paint(polygon([(hx - 1, hy - 12), (hx + 10, hy - 10), (hx + 10, hy + 3), (hx - 1, hy + 1)]),
-                lambda x, y: "g" if (y - hy) % 3 == 0 and x < hx + 8 else "W")
+    elif kind == "sheet":  # flat on the desk along its 2:1 axis, between the hands, with lines of text.
+        g.paint(polygon([(hx - 15, hy - 3), (hx - 3, hy - 9), (hx + 3, hy - 6), (hx - 9, hy)]),
+                lambda x, y: "g" if (x + 2 * y) % 4 == 0 and (y - hy) % 2 == 0 else "W")
 
 
 def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, face: bool = True, lashes: bool = False) -> Grid:
@@ -77,6 +77,8 @@ def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, f
         F.torso(g)
         if not lying:
             F.head(g, style, mood, dy, glasses, face, lashes)
+        if prop == "sheet":
+            _prop(g, prop, front[1])  # lies under the hands.
         F.arm(g, F.SHOULDER_FRONT, *front)
     else:
         # The back arm sits behind the torso: over the desk only its part outside the torso shows, otherwise it
@@ -84,11 +86,13 @@ def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, f
         behind = Grid()
         F.arm(behind, F.SHOULDER_BACK, *back)
         chest = polygon(F.TORSO)
+        if prop == "sheet":
+            _prop(g, prop, front[1])  # lies under the hands.
         g.px.update({p: c for p, c in behind.px.items() if p not in chest})
         F.arm(g, F.SHOULDER_FRONT, *front)
         if lying:
             F.head(g, style, mood, dy, glasses, face, lashes)
-    if prop:
+    if prop and prop != "sheet":
         _prop(g, prop, front[1])
     return g
 
