@@ -16,10 +16,10 @@ SWING_B = (((4, 42), (1, 50)), ((27, 44), (28, 52)), "")
 WAVE = (((6, 42), (6, 51)), ((29, 40), (30, 29)), "")
 CUP_LOW = (((6, 42), (6, 51)), ((25, 44), (20, 45)), "cup")
 CUP_UP = (((6, 42), (6, 51)), ((22, 38), (13, 30)), "cup")
-DESK = ((4, 41), (-2, 47))  # back hand on the keyboard
+DESK = ((6, 42), (2, 47))  # back hand on the keyboard
 TYPE_A = (DESK, ((25, 45), (17, 50)), "")
-TYPE_B = (((4, 40), (-1, 45)), ((25, 44), (18, 48)), "")
-READ = (((4, 41), (-1, 46)), ((24, 45), (15, 49)), "sheet")  # hands resting on a sheet lying on the desk
+TYPE_B = (((6, 41), (2, 46)), ((25, 44), (18, 48)), "")
+READ = (((6, 42), (2, 47)), ((24, 45), (15, 49)), "sheet")  # hands resting on a sheet lying on the desk
 THINK = (DESK, ((22, 40), (14, 26)), "")
 PHONE = (DESK, ((28, 36), (23, 22)), "phone")
 SIP_LOW = (DESK, ((21, 45), (12, 46)), "cup")
@@ -88,7 +88,11 @@ def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, f
         chest = polygon(F.TORSO)
         if prop == "sheet":
             _prop(g, prop, front[1])  # lies under the hands.
-        g.px.update({p: c for p, c in behind.px.items() if p not in chest})
+        shown = {p: c for p, c in behind.px.items() if p not in chest}
+        g.px.update(shown)
+        for x, y in chest:  # the torso's edge where the arm meets it keeps an outline, dividing arm from body.
+            if any((x + dx, y + dy) in shown and shown[(x + dx, y + dy)] != "o" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                g.px[(x, y)] = "o"
         F.arm(g, F.SHOULDER_FRONT, *front)
         if lying:
             F.head(g, style, mood, dy, glasses, face, lashes)
