@@ -293,9 +293,12 @@ class SendTests(unittest.TestCase):
         tempfile.tempdir = SCRATCH
         self.patch_full = mock.patch("office.office.full_session_id", return_value=FULL_ID)
         self.patch_full.start()
+        self.patch_agents = mock.patch("office.office.load_agents_once", return_value=[])  # no real agent registry
+        self.patch_agents.start()
 
     def tearDown(self):
         self.patch_full.stop()
+        self.patch_agents.stop()
         tempfile.tempdir = self._old_tmp
 
     def room(self, sender, state="done", cwd="/work/project"):
@@ -580,7 +583,8 @@ class ImageDraftTests(unittest.TestCase):
         office.composer.focus()
         office.composer.insert("olhe ")
         office.composer.attach(self.png)
-        with mock.patch("office.office.full_session_id", return_value=FULL_ID):
+        with mock.patch("office.office.full_session_id", return_value=FULL_ID), \
+                mock.patch("office.office.load_agents_once", return_value=[]):
             office.submit()
             wait_result(office)
             office.drain()

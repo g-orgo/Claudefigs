@@ -74,7 +74,7 @@ Opções: `--demo` mostra splits de exemplo; `--snapshot arquivo.png --size 200x
 
 ### Envio na sala
 
-Dentro de uma sala, o que você digita vai só para a sessão pai da sala (a que criou os itens), retomada com `claude --bg --resume`. A mensagem chega com a instrução de executar o pedido com um ou mais operadores novos dentro daquela sessão, sem criar sessões novas, sem dividir pelo prompt-splitter e sem repassar aos itens. O destino aparece como "Para: sessao da sala: <título> (novo operador)". Os itens da sala nunca recebem a mensagem nem são retomados por ela. Sala sem sessão pai não envia e mantém o rascunho. Se a sessão pai estiver aberta em outro lugar, o Claude Code continua em uma cópia e o aviso diz isso. Retomar itens parados pelo limite de uso continua automático (aviso de retomada).
+Dentro de uma sala, o que você digita vai só para a sessão pai da sala (a que criou os itens), retomada com `claude --bg --resume`. A mensagem chega com a instrução de executar o pedido com um ou mais operadores novos dentro daquela sessão, sem criar sessões novas, sem dividir pelo prompt-splitter e sem repassar aos itens. O destino aparece como "Para: sessao da sala: <título> (novo operador)". Os itens da sala nunca recebem a mensagem nem são retomados por ela. Sala sem sessão pai não envia e mantém o rascunho. Se a sessão pai estiver registrada em segundo plano e parada (bloqueada, concluída, ociosa), o escritório a para antes de retomar, para que continue com o mesmo id e nunca em uma cópia; se ela estiver rodando naquele momento, o envio é recusado ("A sessao da sala esta rodando: envie quando ela parar") e o rascunho fica na caixa. Retomar itens parados pelo limite de uso continua automático (aviso de retomada).
 
 ### Limite de uso
 

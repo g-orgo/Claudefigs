@@ -24,6 +24,9 @@ class RoomSendTest(unittest.TestCase):
         patch = mock.patch("office.office.full_session_id", side_effect=lambda value: value)  # no real transcripts
         patch.start()
         self.addCleanup(patch.stop)
+        agents = mock.patch("office.office.load_agents_once", return_value=[])  # no real agent registry
+        agents.start()
+        self.addCleanup(agents.stop)
         office = Office(200, 60, sender=sender)
         office.mode = "room"
         office.door_key = "p1"
@@ -50,6 +53,25 @@ class RoomSendTest(unittest.TestCase):
         argv = sender.call_args.args[0]
         self.assertEqual(argv[:4], ["claude", "--bg", "--resume", "p1"])
         self.assertTrue(argv[4].endswith("oi a todos"))
+
+    def test_registered_idle_parent_is_stopped_before_resume(self):
+        office, sender = self.office([make("a")])
+        agents = [{"id": "p1short", "sessionId": "p1", "state": "blocked"}]
+        with mock.patch("office.office.load_agents_once", return_value=agents), \
+                mock.patch("office.office.subprocess.run") as run:
+            self.run_submit(office)
+        self.assertEqual(run.call_args.args[0], ["claude", "stop", "p1short"])
+        self.assertEqual(sender.call_count, 1)
+
+    def test_running_parent_refuses_instead_of_copying(self):
+        office, sender = self.office([make("a")])
+        agents = [{"id": "p1short", "sessionId": "p1", "state": "working"}]
+        with mock.patch("office.office.load_agents_once", return_value=agents), \
+                mock.patch.object(office, "notify") as notify:
+            self.run_submit(office)
+        self.assertEqual(sender.call_count, 0)
+        notify.assert_called_with("A sessao da sala esta rodando: envie quando ela parar")
+        self.assertEqual(office.composer.text, "oi a todos")
 
     def test_batch_shape_is_generic(self):
         office, _ = self.office([make("a")])

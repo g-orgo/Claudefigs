@@ -14,7 +14,7 @@ from .bubble import clean
 from .clipboard import UNAVAILABLE, read_clipboard
 from .composer import (BACK_H, BACK_W, MIN_ROWS, PANEL_ROWS_SHORT, PLATE_ROWS, POPUP_ROWS, TEXT_TOP_ROWS, Composer, draw_back_button,
                        draw_composer, draw_popup, field_geometry, panel_rows)
-from .data import full_session_id
+from .data import full_session_id, load_agents_once
 from .hall import BACK, WAREHOUSE, Hall, doors_of
 from .hallart import BAY_W
 from .hallplan import WIDE_COLS, WIDE_ROWS
@@ -508,7 +508,7 @@ class Office:
         cwd = next((w.cwd for w in room if w.cwd), None)
         title = clean(room[0].room_title) or "a sessao da sala"
         argv = ["claude", "--bg", "--resume", session_id, ROOM_PREFIX + prompt.lstrip()]
-        job = {"kind": "room", "draft": self.composer.state(), "title": title, "plan": None}
+        job = {"kind": "room", "draft": self.composer.state(), "title": title, "plan": None, "parent": session_id}
         self.inflight = True
         self.composer.clear()  # instant feedback: the draft comes back only if the send fails.
         self.notify("Enviando...")
@@ -655,6 +655,24 @@ class Office:
         worker = next((w for w in self.workers if w.id == worker_id), None)
         return worker is None or worker.state in ROOM_BUSY or worker.state == "waiting"
 
+    def _prepare_parent(self, job: dict) -> None:
+        """Makes the room's parent session take the resume under its own id, never in a copy.
+
+        A background session still registered (idle, blocked, done) is stopped first, as with room items;
+        one that is running right now refuses the send, since resuming it would start a copy.
+        """
+        agents = load_agents_once() or []
+        entry = next((a for a in agents if isinstance(a, dict) and a.get("sessionId") == job["parent"]), None)
+        if entry is None:
+            return
+        if entry.get("state") in ROOM_BUSY:
+            job["parent_busy"] = True
+            raise RuntimeError("parent session is running")
+        try:
+            subprocess.run(["claude", "stop", entry.get("id") or job["parent"]], capture_output=True, text=True, timeout=30)
+        except Exception:  # already exited or failed: the resume still runs.
+            pass
+
     def _run(self, job: dict, argv: list, cwd) -> None:
         ok, output = False, ""
         try:
@@ -666,6 +684,8 @@ class Office:
                         subprocess.run(["claude", "stop", job["worker_id"]], capture_output=True, text=True, timeout=30)
                     except Exception:  # already exited or failed: the resume still runs.
                         pass
+            if job.get("kind") == "room":
+                self._prepare_parent(job)
             code, output = self.sender(argv, cwd)
             ok = code == 0
         except Exception:  # any launch failure, timeout included, only means the send did not happen.
@@ -687,7 +707,7 @@ class Office:
                 self._finish_batch(job)
                 continue
             if not ok:
-                self.notify("Nao foi possivel enviar")
+                self.notify("A sessao da sala esta rodando: envie quando ela parar" if job.get("parent_busy") else "Nao foi possivel enviar")
                 if job["kind"] == "answer":
                     asking = job["asking"]
                     self.sent_asks.difference_update(asking.asks)
