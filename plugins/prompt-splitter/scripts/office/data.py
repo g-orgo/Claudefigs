@@ -9,13 +9,14 @@ import sys
 import threading
 import time
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 SCRIPTS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 import status  # noqa: E402  (scripts dir is added to sys.path above)
-from office.model import Line, Worker  # noqa: E402
+from office.model import Line, Question, Worker  # noqa: E402
 
 TAIL = 200  # activity lines kept per worker
 CLIP = 300  # characters kept per transcript line
@@ -281,6 +282,78 @@ def read_tail(path: str) -> str:
     return data
 
 
+LIMIT_RE = re.compile(
+    r"(?:(\d+)-hour limit|(session) limit|(weekly) limit)"
+    r".*?resets\s+(?:([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(?:at\s+)?)?"
+    r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)",
+    re.IGNORECASE,
+)
+
+
+def _limit_kind(match) -> str:
+    if match.group(1):
+        return f"{int(match.group(1))}-hour"
+    return "session" if match.group(2) else "weekly"
+
+
+def _reset_ms(match, limit_dt: dt.datetime) -> float:
+    """Next wall-clock occurrence of the reset time, in its own timezone, strictly after the limit record."""
+    try:
+        zone = ZoneInfo(match.group(9).strip())
+    except Exception:  # unknown timezone name: the reset is unknown.
+        return 0.0
+    hour = int(match.group(6)) % 12 + (12 if match.group(8).lower() == "pm" else 0)
+    minute = int(match.group(7) or 0)
+    local = limit_dt.astimezone(zone)
+    if match.group(4):
+        try:
+            month = dt.datetime.strptime(match.group(4)[:3].title(), "%b").month
+        except ValueError:
+            return 0.0
+        day = int(match.group(5))
+        for year in (local.year, local.year + 1):
+            try:
+                candidate = dt.datetime(year, month, day, hour, minute, tzinfo=zone)
+            except ValueError:
+                return 0.0
+            if candidate > limit_dt:
+                return candidate.timestamp() * 1000
+        return 0.0
+    for offset in (0, 1):
+        day_value = local.date() + dt.timedelta(days=offset)
+        candidate = dt.datetime(day_value.year, day_value.month, day_value.day, hour, minute, tzinfo=zone)
+        if candidate > limit_dt:
+            return candidate.timestamp() * 1000
+    return 0.0
+
+
+def usage_limit(path: str) -> tuple[str, float, float] | None:
+    """(kind, limit_at_ms, reset_ms) when the last meaningful entry of the transcript is a rate-limit record."""
+    entries = [e for e in (parse_entry(raw) for raw in read_tail(path).split("\n")) if e is not None]
+    for entry in reversed(entries):
+        kind_of = entry.get("type")
+        if kind_of == "user" and not entry.get("isMeta"):
+            return None  # the user wrote after the limit: the session moved on.
+        if kind_of != "assistant":
+            continue
+        if not (entry.get("isApiErrorMessage") and entry.get("error") == "rate_limit"):
+            return None  # real assistant output after any limit: nothing is stopped.
+        content = (entry.get("message") or {}).get("content") or []
+        text = " ".join(str(block.get("text") or "") for block in content if isinstance(block, dict))
+        match = LIMIT_RE.search(text)
+        try:
+            limit_dt = dt.datetime.fromisoformat(str(entry.get("timestamp") or "").replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if limit_dt.tzinfo is None:
+            limit_dt = limit_dt.replace(tzinfo=dt.timezone.utc)
+        limit_at = limit_dt.timestamp() * 1000
+        if match is None:
+            return ("session", limit_at, 0.0)
+        return (_limit_kind(match), limit_at, _reset_ms(match, limit_dt))
+    return None
+
+
 def default_read_lines(path: str) -> list[Line]:
     """Activity lines of a transcript; empty when there is no transcript yet. Cached by mtime."""
     try:
@@ -311,6 +384,68 @@ def last_tool_use(path: str):
             return blocks[-1][1]
         return None
     return None
+
+
+def _question_of(ask: str, item, asked_ms: float):
+    """One Question from an AskUserQuestion input item, or None when it has no text."""
+    if not isinstance(item, dict) or not str(item.get("question") or "").strip():
+        return None
+    options = []
+    for option in item.get("options") or []:
+        if isinstance(option, dict) and str(option.get("label") or "").strip():
+            options.append((clip(str(option["label"])), clip(str(option.get("description") or ""))))
+    return Question(ask=ask, header=clip(str(item.get("header") or "")), text=clip(str(item["question"])),
+                    options=tuple(options), multi=item.get("multiSelect") is True, asked_ms=asked_ms)
+
+
+def pending_questions(path: str) -> list[Question]:
+    """Questions of the AskUserQuestion calls in the last assistant entry that have no tool result yet."""
+    entries = [e for e in (parse_entry(raw) for raw in read_tail(path).split("\n")) if e is not None]
+    last = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].get("type") == "assistant"), None)
+    if last is None:
+        return []
+    answered = set()
+    for entry in entries[last + 1:]:
+        content = (entry.get("message") or {}).get("content") if isinstance(entry.get("message"), dict) else None
+        for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                answered.add(block.get("tool_use_id"))
+    message = entries[last].get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    asked_ms = to_ms(entries[last].get("timestamp"))
+    questions: list[Question] = []
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict) or block.get("type") != "tool_use" or block.get("name") != "AskUserQuestion":
+            continue
+        if block.get("id") in answered:
+            continue
+        tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
+        for item in tool_input.get("questions") or []:
+            question = _question_of(str(block.get("id") or ""), item, asked_ms)
+            if question is not None:
+                questions.append(question)
+    return questions
+
+
+JOBS_DIR = os.path.expanduser("~/.claude/jobs")
+
+
+def job_questions(job_id: str, jobs_dir: str | None = None) -> list[Question]:
+    """Questions a background session is blocked on right now, from its job state; the transcript only gets them once answered."""
+    if not job_id or "/" in job_id:
+        return []
+    try:
+        with open(os.path.join(jobs_dir or JOBS_DIR, job_id, "state.json"), encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(state, dict) or not str(state.get("needs") or "").startswith("answer"):
+        return []  # an old block stays in the file after the session moved on; only a live need counts.
+    block = state.get("block") if isinstance(state.get("block"), dict) else {}
+    asked = state.get("updatedAt")
+    ask = f"job:{job_id}:{asked}"
+    questions = [_question_of(ask, item, to_ms(asked)) for item in block.get("questions") or []]
+    return [q for q in questions if q is not None]
 
 
 def subagent_count(path: str, now_ms: float) -> int:
@@ -361,7 +496,7 @@ def map_state(rec: dict, agent, path: str, now_ms: float, started_ms: float):
     if agent is not None:
         if agent.get("state") == "failed":
             return "failed", "none"
-        if status.awaits_answer(path):
+        if agent.get("waitingFor") == "input needed" or status.awaits_answer(path):
             return "ask", "none"
         if agent.get("state") != "done":
             return "blocked", "none"
@@ -405,6 +540,7 @@ def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=d
         path = status.child_transcript(rec, probe)
         started_ms = to_ms(rec.get("started", probe.get("startedAt")))
         state, activity = map_state(rec, agent_dict, path, now_ms, started_ms)
+        limit = usage_limit(path) if path and state not in ("working", "thinking", "waiting") else None
         subagents = 0
         if state in ("working", "thinking"):
             subagents = subagent_count(path, now_ms)
@@ -429,6 +565,10 @@ def build_workers(records: list[dict], agents: dict, now_ms: float, read_lines=d
             room_title=room_title_of(rec),
             parent=str(rec.get("parent") or ""),
             in_cwd=record_in_cwd(rec, cwd),
+            questions=(job_questions(str(rec.get("id") or "")) or pending_questions(path)) if state == "ask" else [],
+            limit=limit[0] if limit else "",
+            limit_at_ms=limit[1] if limit else 0.0,
+            limit_reset_ms=limit[2] if limit else 0.0,
         ))
     parents = {str(rec.get("parent") or "") for rec in records}
     parents.discard("")

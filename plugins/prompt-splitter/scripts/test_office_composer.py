@@ -324,7 +324,7 @@ class SendTests(unittest.TestCase):
             office.drain()
         self.assertEqual(calls, [(["claude", "--bg", "--resume", FULL_ID, "ola"], "/work/project")])
         self.assertEqual(office.composer.text, "")
-        notify.assert_called_with("Enviado para Titulo do split")
+        notify.assert_called_with("Enviado para o item da sala")
 
     def test_room_send_prefixes_leading_dash_with_space(self):
         calls = []
@@ -341,7 +341,7 @@ class SendTests(unittest.TestCase):
         with mock.patch.object(office, "notify") as notify:
             office.submit()
         self.assertEqual(calls, [])
-        notify.assert_called_with("Esta sessao esta rodando: espere terminar para enviar")
+        notify.assert_called_with("Nenhum item da sala pode receber agora")
         self.assertEqual(office.composer.text, "ola")
 
     def test_copy_wording_gets_copy_notice(self):
@@ -351,7 +351,7 @@ class SendTests(unittest.TestCase):
             office.submit()
             wait_result(office)
             office.drain()
-        notify.assert_called_with("A sessao estava ativa: continuou em uma copia")
+        notify.assert_called_with("Enviado para o item da sala; 1 continuaram em copia")
 
     def test_failure_restores_text_when_field_is_empty(self):
         office = self.room(lambda argv, cwd: (1, "erro"))
@@ -383,13 +383,16 @@ class SendTests(unittest.TestCase):
             office.submit()
         notify.assert_called_with("Aguarde o envio anterior")
 
-    def test_room_without_selection_is_refused(self):
-        office = self.room(lambda argv, cwd: (0, ""))
-        office.scene.selected_id = None
+    def test_room_with_no_eligible_item_keeps_draft(self):
+        calls = []
+        office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1], state="waiting")
         self.type_text(office, "ola")
         with mock.patch.object(office, "notify") as notify:
             office.submit()
-        notify.assert_called_with("Selecione um item primeiro")
+            office.drain()
+        self.assertEqual(calls, [])
+        notify.assert_called_with("Nenhum item da sala pode receber agora")
+        self.assertEqual(office.composer.text, "ola")
 
     def test_hall_send_writes_plan_and_runs_dispatch_then_removes_plan(self):
         seen = {}
@@ -431,7 +434,7 @@ class SendTests(unittest.TestCase):
 
     def test_destination_text_in_room_and_hall(self):
         office = self.room(lambda argv, cwd: (0, ""))
-        self.assertEqual(office._destination(), "Para: Titulo do split")
+        self.assertEqual(office._destination(), "Para: todos da sala (1 item)")
         hall = make_office()
         self.assertTrue(hall._destination().startswith("Nova sess"))
 

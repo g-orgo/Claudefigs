@@ -3,6 +3,7 @@ from .rig import Grid, ellipse, limb, lit, polygon
 
 HEAD_C, HEAD_R = (16.0, 13.0), (11.5, 12.5)
 SHOULDER_BACK, SHOULDER_FRONT = (10, 34), (23, 36)  # up-left (far) and down-right (near) shoulders.
+SHOULDER_SIDE = (9, 33)  # far shoulder of an arm hanging along the torso's left side, over it (seated, at the keys).
 HIP_BACK, HIP_FRONT = (12, 50), (20, 52)
 TORSO = [(9, 27), (15, 26), (25, 30), (26, 34), (24, 52), (9, 50), (7, 32)]
 

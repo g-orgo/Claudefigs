@@ -467,3 +467,56 @@ class RoomTitleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UsageLimitTest(unittest.TestCase):
+    """usage_limit reads the stop record that ends a session transcript."""
+
+    LIMIT_AT = "2026-11-11T07:53:17.081Z"  # 04:53 in Sao Paulo
+
+    def transcript(self, *records):
+        handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8")
+        handle.write("\n".join(json.dumps(r) for r in records) + "\n")
+        handle.close()
+        self.addCleanup(os.remove, handle.name)
+        return handle.name
+
+    def stop(self, text, at=LIMIT_AT):
+        return {"type": "assistant", "isApiErrorMessage": True, "error": "rate_limit", "timestamp": at,
+                "message": {"model": "<synthetic>", "content": [{"type": "text", "text": text}]}}
+
+    def test_kinds(self):
+        for text, kind in [("You've hit your 5-hour limit · resets 8:20am (America/Sao_Paulo)", "5-hour"),
+                           ("You've hit your session limit · resets 6pm (America/Sao_Paulo)", "session"),
+                           ("You've hit your weekly limit · resets Nov 14, 6pm (America/Sao_Paulo)", "weekly")]:
+            with self.subTest(kind=kind):
+                found = data.usage_limit(self.transcript(self.stop(text)))
+                self.assertEqual(found[0], kind)
+
+    def test_reset_same_day_and_evening(self):
+        morning = data.usage_limit(self.transcript(self.stop("5-hour limit · resets 8:20am (America/Sao_Paulo)")))
+        evening = data.usage_limit(self.transcript(self.stop("session limit · resets 6pm (America/Sao_Paulo)")))
+        self.assertEqual(morning[2], 1794396000000.0)  # 2026-11-11 08:20 -03:00
+        self.assertEqual(evening[2], 1794430800000.0)  # 2026-11-11 18:00 -03:00
+
+    def test_reset_rolls_to_next_day(self):
+        late = self.stop("5-hour limit · resets 8:20am (America/Sao_Paulo)", at="2026-11-11T12:00:00.000Z")  # 09:00 local
+        found = data.usage_limit(self.transcript(late))
+        self.assertEqual(found[2], 1794396000000.0 + 24 * 3600 * 1000)
+
+    def test_later_user_prompt_clears_it(self):
+        user = {"type": "user", "timestamp": "2026-11-11T08:00:00.000Z", "message": {"content": "oi"}}
+        self.assertIsNone(data.usage_limit(self.transcript(self.stop("5-hour limit · resets 8:20am (America/Sao_Paulo)"), user)))
+
+    def test_meta_user_entry_keeps_it(self):
+        meta = {"type": "user", "isMeta": True, "message": {"content": "caveat"}}
+        self.assertIsNotNone(data.usage_limit(self.transcript(self.stop("5-hour limit · resets 8:20am (America/Sao_Paulo)"), meta)))
+
+    def test_unknown_reset_is_zero(self):
+        found = data.usage_limit(self.transcript(self.stop("5-hour limit · resets soon")))
+        self.assertEqual(found[0], "session")
+        self.assertEqual(found[2], 0.0)
+
+    def test_real_output_after_limit_clears_it(self):
+        reply = {"type": "assistant", "timestamp": "2026-11-11T08:00:00.000Z", "message": {"content": [{"type": "text", "text": "ok"}]}}
+        self.assertIsNone(data.usage_limit(self.transcript(self.stop("5-hour limit · resets 8:20am (America/Sao_Paulo)"), reply)))

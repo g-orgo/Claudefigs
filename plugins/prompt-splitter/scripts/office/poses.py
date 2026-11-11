@@ -16,10 +16,17 @@ SWING_B = (((4, 42), (1, 50)), ((27, 44), (28, 52)), "")
 WAVE = (((6, 42), (6, 51)), ((29, 40), (30, 29)), "")
 CUP_LOW = (((6, 42), (6, 51)), ((25, 44), (20, 45)), "cup")
 CUP_UP = (((6, 42), (6, 51)), ((22, 38), (13, 30)), "cup")
-DESK = ((6, 42), (2, 47))  # back hand on the keyboard
+# Back hand on the keyboard: the upper arm runs down along the torso's left side, its outer line on the torso's
+# line, and only the forearm leaves it toward the hand. These arms are drawn over the torso (see ALONG).
+DESK = ((8, 41), (2, 47))
+DESK_UP = ((8, 40), (2, 46))
+ALONG = (DESK, DESK_UP)
+# Column of the torso's left contour per row where such an arm overlaps it: a slight outward bulge at the chest. Cells
+# right of it stay torso, so the arm reads as hanging beside the body instead of lying over it.
+SIDE_LINE = {30: 11, 31: 11, 32: 10, 33: 10, 34: 10, 35: 10, 36: 10, 37: 10, 38: 11, 39: 11}
 TYPE_A = (DESK, ((25, 45), (17, 50)), "")
-TYPE_B = (((6, 41), (2, 46)), ((25, 44), (18, 48)), "")
-READ = (((6, 42), (2, 47)), ((24, 45), (15, 49)), "sheet")  # hands resting on a sheet lying on the desk
+TYPE_B = (DESK_UP, ((25, 44), (18, 48)), "")
+READ = (DESK, ((24, 45), (15, 49)), "sheet")  # hands resting on a sheet lying on the desk
 THINK = (DESK, ((22, 40), (14, 26)), "")
 PHONE = (DESK, ((28, 36), (23, 22)), "phone")
 SIP_LOW = (DESK, ((21, 45), (12, 46)), "cup")
@@ -64,35 +71,57 @@ def _prop(g: Grid, kind: str, hand: tuple) -> None:
                 lambda x, y: "g" if (x + 2 * y) % 4 == 0 and (y - hy) % 2 == 0 else "W")
 
 
+def _side_arm(g: Grid, back: tuple) -> None:
+    """Draws an arm hanging along the torso's side: the arm over the torso, then the torso's contour back on top."""
+    arm = Grid()
+    F.arm(arm, F.SHOULDER_SIDE, *back)
+    chest = polygon(F.TORSO)
+    for (x, y), c in arm.px.items():
+        line = SIDE_LINE.get(y)
+        if line is None or x < line or (x, y) not in chest:
+            g.px[(x, y)] = c
+        elif x == line:
+            g.px[(x, y)] = "o"
+        else:
+            g.px[(x, y)] = "t"
+
+
 def frame_grid(frame: tuple, style: str, mood: str, glasses: bool, layer: str, face: bool = True, lashes: bool = False) -> Grid:
     """Letter grid of one frame. layer "back" is the whole figure behind the desk, "front" only the arms (and a
     head lying on the desk) drawn over it, "all" everything for a standing character."""
     legs, (back, front, prop), dy, _, _ = frame
     g = Grid()
     lying = dy >= LYING
+    along = back in ALONG
     if layer in ("all", "back"):
-        F.arm(g, F.SHOULDER_BACK, *back)
+        if not along:
+            F.arm(g, F.SHOULDER_BACK, *back)
         if legs:
             F.legs(g, *legs)
         F.torso(g)
+        if along:
+            _side_arm(g, back)
         if not lying:
             F.head(g, style, mood, dy, glasses, face, lashes)
         if prop == "sheet":
             _prop(g, prop, front[1])  # lies under the hands.
         F.arm(g, F.SHOULDER_FRONT, *front)
     else:
-        # The back arm sits behind the torso: over the desk only its part outside the torso shows, otherwise it
-        # would be painted across the chest.
-        behind = Grid()
-        F.arm(behind, F.SHOULDER_BACK, *back)
-        chest = polygon(F.TORSO)
         if prop == "sheet":
             _prop(g, prop, front[1])  # lies under the hands.
-        shown = {p: c for p, c in behind.px.items() if p not in chest}
-        g.px.update(shown)
-        for x, y in chest:  # the torso's edge where the arm meets it keeps an outline, dividing arm from body.
-            if any((x + dx, y + dy) in shown and shown[(x + dx, y + dy)] != "o" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
-                g.px[(x, y)] = "o"
+        if along:  # drawn over the torso's side, which keeps its own contour in front of the arm.
+            _side_arm(g, back)
+        else:
+            # The back arm sits behind the torso: over the desk only its part outside the torso shows, otherwise it
+            # would be painted across the chest.
+            behind = Grid()
+            F.arm(behind, F.SHOULDER_BACK, *back)
+            chest = polygon(F.TORSO)
+            shown = {p: c for p, c in behind.px.items() if p not in chest}
+            g.px.update(shown)
+            for x, y in chest:  # the torso's edge where the arm meets it keeps an outline, dividing arm from body.
+                if any((x + dx, y + dy) in shown and shown[(x + dx, y + dy)] != "o" for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    g.px[(x, y)] = "o"
         F.arm(g, F.SHOULDER_FRONT, *front)
         if lying:
             F.head(g, style, mood, dy, glasses, face, lashes)

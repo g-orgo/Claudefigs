@@ -28,6 +28,7 @@ NEXT = {"\x1b[C", "\x1b[B"}
 PREVIOUS = {"\x1b[D", "\x1b[A"}
 ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]?|O[A-Z]?)?")  # CSI, or SS3 (arrows in application cursor mode).
 PARTIAL = re.compile(r"\x1b(?:\[[0-?]*[ -/]*|O)?")
+FOCUS_IN, FOCUS_OUT = "\x1b[I", "\x1b[O"  # focus reporting (mode 1004); ESCAPE already reads each as one key.
 SS3_KEYS = {f"\x1bO{c}": f"\x1b[{c}" for c in "ABCDHF"}  # application cursor mode sends ESC O x; read it as ESC [ x.
 MOUSE = re.compile(r"\x1b\[<(\d+);(\d+);(\d+)([Mm])")
 LEFT_BUTTON, WHEEL_UP, WHEEL_DOWN = 0, 64, 65
@@ -144,6 +145,8 @@ def handle_key(scene, key: str) -> None:
                 if text:
                     write_clipboard(text)
             return
+        if button == LEFT_BUTTON and getattr(scene, "notice_click", lambda c, r: False)(col, row):
+            return  # the usage-limit pop-up closes on a click and the click goes no further.
         if button == LEFT_BUTTON and composer is not None and composer.focused:
             index = scene.popup_row_at(col, row)
             if index is not None:
@@ -151,6 +154,8 @@ def handle_key(scene, key: str) -> None:
                 return
         if button == LEFT_BUTTON and composer is not None:
             if scene.in_composer(col, row):
+                if getattr(scene, "question_click", lambda c, r: False)(col, row):
+                    return  # a question or one of its options, not the answer line.
                 composer.focus()
                 index = composer.index_at(col, row)
                 if index is not None:
@@ -169,6 +174,10 @@ def handle_key(scene, key: str) -> None:
             worker = scene.click(col, row)
             if worker is not None:
                 open_session(scene, worker)
+    elif getattr(scene, "answer_key", lambda k: False)(key):
+        return  # a shown question took the key: option arrows, Space, Tab, Ctrl+X.
+    elif key == "\x1b" and not (composer is not None and composer.focused) and getattr(scene, "notice_dismiss", lambda: False)():
+        return  # Esc closes the usage-limit pop-up only when the field is not focused.
     elif composer is not None and composer.focused:
         if key in ("\r", "\n"):
             if not scene.popup_accept():  # with a suggestion open, Enter takes it instead of sending.
@@ -331,6 +340,7 @@ def run(source, demo: bool = False) -> int:
     try:
         screen.enter()
         sys.stdout.write("\x1b[?2004h")
+        sys.stdout.write("\x1b[?1004h")
         sys.stdout.flush()
         clock = FrameClock(time.monotonic())
         while True:
@@ -354,7 +364,12 @@ def run(source, demo: bool = False) -> int:
                 keys = keys_of(pending + decoder.decode(os.read(sys.stdin.fileno(), 1024)))
                 pending = keys.pop() if keys and PARTIAL.fullmatch(keys[-1]) else ""
                 pending_at = time.monotonic()
+                scene.user_active()  # any input is activity: resume the sessions whose limit reset.
                 for key in keys:
+                    if key == FOCUS_IN:
+                        continue
+                    if key == FOCUS_OUT:
+                        continue
                     if paste is not None:
                         if key == PASTE_END:
                             scene.paste("".join(paste))
@@ -372,6 +387,7 @@ def run(source, demo: bool = False) -> int:
         return 0
     finally:
         sys.stdout.write("\x1b[?2004l")
+        sys.stdout.write("\x1b[?1004l")
         sys.stdout.flush()
         screen.exit()
 

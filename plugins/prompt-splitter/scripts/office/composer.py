@@ -586,8 +586,12 @@ def _draw_line(frame: Frame, x: int, row: int, line: str, start: int, composer: 
         pixelfont.draw_text(frame, x, row, run, INK_BROWN, GOLD_FOCUSED if painted else PARCHMENT, pixels)
 
 
-def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, composer: "Composer", destination: str, hints: tuple[str, ...], tick: int) -> None:
-    """Draws the box in the `rows` rows from (`col`, `top`), over whatever the view drew there."""
+def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, composer: "Composer", destination: str, hints: tuple[str, ...], tick: int,
+                  body: int = 0, placeholder: str = PLACEHOLDER_IDLE, hint_focused: str = "") -> None:
+    """Draws the box in the `rows` rows from (`col`, `top`), over whatever the view drew there.
+
+    `body` rows above the text stay empty parchment for a block the caller draws (the questions of a session);
+    `hint_focused` is a faded hint after the caret while the focused field is empty."""
     composer._lines = None
     if width < 24:
         return
@@ -612,8 +616,8 @@ def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, compo
     if hint:
         pixelfont.draw_text(frame, col + hint_x + 1 + PLATE_PAD, top + 1, hint, PLATE_TEXT, fill)
 
-    capacity = 2 if rows == PANEL_ROWS else 1
-    first = top + PLATE_ROWS + TEXT_TOP_ROWS
+    capacity = 2 if rows - body == PANEL_ROWS else 1
+    first = top + PLATE_ROWS + TEXT_TOP_ROWS + body
     x = col + PAD_CELLS
     wrap_width = inner * pixelfont.CELL_X - pixelfont.text_width(CARET) - 1
     lines = pixelfont.wrap(composer.text, wrap_width) if composer.text else ("",)
@@ -637,5 +641,8 @@ def draw_composer(frame: Frame, top: int, col: int, width: int, rows: int, compo
     for i in range(window, min(window + capacity, len(lines))):
         _draw_line(frame, x, first + (i - window) * pixelfont.LINE_ROWS, lines[i], starts[i], composer)
     if not composer.text and not composer.focused:
-        pixelfont.draw_text(frame, x, first, pixelfont.clip(PLACEHOLDER_IDLE, inner * pixelfont.CELL_X), FADED, PARCHMENT)
+        pixelfont.draw_text(frame, x, first, pixelfont.clip(placeholder, inner * pixelfont.CELL_X), FADED, PARCHMENT)
+    elif not composer.text and hint_focused:
+        offset = pixelfont.text_width(CARET) + 3
+        pixelfont.draw_text(frame, x, first, pixelfont.clip(hint_focused, inner * pixelfont.CELL_X - offset), FADED, PARCHMENT, offset)
 

@@ -201,11 +201,13 @@ def draw_chair(canvas: Canvas, x: int, y: int, kit: Kit = CLASSIC, occupied: boo
     g.paint(ellipse(16.5, 40, 15.5, 7) | polygon([(1, 36), (32, 36), (32, 40), (1, 40)]),
             lambda u, v: "l" if u >= 17 else "c")
     g.paint(ellipse(16.5, 36, 15.5, 7), lambda u, v: "C" if v <= 31 or u <= 4 else "c")
-    if not occupied:  # far armrest: the near one shifted 15 px along the seat's left edge, so both run parallel.
-        # Drawn over the cushion but before the near armrest; the backrest never reaches this side of the seat.
-        g.paint(limb((9, 40), (9, 34), 2), lambda u, v: "m")
-        g.paint(polygon([(18 - 15, 34), (29 - 15, 28), (32 - 15, 29), (32 - 15, 31), (21 - 15, 37), (18 - 15, 36)]),
-                lambda u, v: "C" if v + (u - 3) // 2 <= 34 else "l")
+    if not occupied:  # far armrest: the near one mirrored through the seat centre along the 2:1 iso axis.
+        # The near post stands at centre + (7.5, 4), so the far one sits at centre - (7.5, 4): a (-15, -8) shift
+        # keeps both posts and pads on one iso line. Drawn over the cushion but before the near armrest.
+        fdx, fdy = -15, -8
+        g.paint(limb((24 + fdx, 40 + fdy), (24 + fdx, 34 + fdy), 2), lambda u, v: "m")
+        g.paint(polygon([(px + fdx, py + fdy) for px, py in [(18, 34), (29, 28), (32, 29), (32, 31), (21, 37), (18, 36)]]),
+                lambda u, v: "C" if (v - fdy) + (u - fdx - 18) // 2 <= 34 else "l")
     g.paint(limb((24, 40), (24, 34), 2), lambda u, v: "m")  # near armrest: a post and a padded rest.
     g.paint(polygon([(18, 34), (29, 28), (32, 29), (32, 31), (21, 37), (18, 36)]),
             lambda u, v: "C" if v + (u - 18) // 2 <= 34 else "l")

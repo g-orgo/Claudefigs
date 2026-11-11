@@ -1,7 +1,7 @@
 """Fake workers for the office viewer when no real split data is wanted."""
 import time
 
-from office.model import Line, Worker
+from office.model import Line, Question, Worker
 
 
 def _lines(*pairs) -> list[Line]:
@@ -47,7 +47,17 @@ def demo_workers(now_ms: float | None = None) -> list[Worker]:
         Worker(id="demo-8", name="split-permissoes", title="Confirmar regras de permissão",
                item_label="1", group="outra", room_title="Integrar pagamentos e permissoes", index=1, started_ms=now - 300_000,
                state="ask", activity="none", after=[],
-               lines=_lines(("claude", "Devo manter o acesso de leitura para convidados?")), **base),
+               lines=_lines(("claude", "Devo manter o acesso de leitura para convidados?")),
+               questions=[
+                   Question(ask="demo-ask", header="Convidados", asked_ms=now - 60_000,
+                            text="Devo manter o acesso de leitura para convidados depois da troca de perfis?",
+                            options=(("Manter leitura", "Convidados continuam vendo os relatórios"),
+                                     ("Remover acesso", "Só membros veem os relatórios"),
+                                     ("Perguntar ao admin", "Cada espaço decide"))),
+                   Question(ask="demo-ask", header="Auditoria", asked_ms=now - 60_000, multi=True,
+                            text="Quais eventos entram no log de auditoria?",
+                            options=(("Login", ""), ("Troca de papel", ""), ("Exportação", ""))),
+               ], **base),
         Worker(id="demo-9", name="split-api-pagamento", title="Integrar a API de pagamento",
                item_label="2", group="outra", room_title="Integrar pagamentos e permissoes", index=2, started_ms=now - 290_000,
                state="blocked", activity="none", after=[],
