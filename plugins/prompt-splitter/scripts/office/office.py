@@ -32,6 +32,11 @@ ROOM_BUSY = ("working", "thinking")
 LIMIT_WINDOW_MS = 24 * 3600 * 1000  # a usage-limit stop older than this is not resumed.
 WEEKLY_WINDOW_MS = 8 * 24 * 3600 * 1000  # weekly limits wait longer for their reset.
 UNKNOWN_RESET_MS = 15 * 60 * 1000  # without a known reset time, resume after this long.
+ROOM_PREFIX = (
+    "Pedido novo do usuario, enviado pelo escritorio da sala desta sessao (prompt-splitter). "
+    "Execute-o delegando a um ou mais operadores novos aqui dentro desta sessao (Agent tool, conforme a camada do trabalho). "
+    "Nao crie sessoes novas, nao use o prompt-splitter para dividir e nao repasse esta mensagem aos itens da sala.\n\n"
+)
 RESUME_PROMPT = "Continue de onde parou: o limite de uso foi liberado."
 COPY_WORDING = re.compile(r"(?i)\b(copy|c[oó]pia|started a copy)\b")
 BACK_GAP = 1  # cells between the back button and the box.
@@ -391,7 +396,8 @@ class Office:
             others = len(self._askers()) - 1
             return f"Pergunta de: {clean(self.asking.worker.title)}" + (f" (+{others})" if others > 0 else "")
         if self.mode == "room":
-            return "Nova sessão nesta sala"
+            title = next((clean(w.room_title) for w in self._room_workers() if w.room_title), "")
+            return f"Para: sessao da sala{': ' + title if title else ''} (novo operador)"
         return "Nova sessão"
 
     def _suggest_cwd(self) -> str:
@@ -485,25 +491,24 @@ class Office:
         return [w for w in self.workers if w.room_key == self.door_key]
 
     def _submit_room(self, prompt: str) -> None:
-        """Starts ONE new session for the draft in the room's project, under the room's parent so it shows in the room.
+        """Delivers the draft to the room's parent session, which hands it to new operators inside itself.
 
-        A room message is a new request, never a broadcast: it must not be resumed into every item of the room.
-        When the request has several independent items, the new session splits them itself through prompt-splitter.
+        A room message never becomes a new session and is never broadcast to the items of the room.
         """
         room = self._room_workers()
-        if not room:
-            self.notify("Sala vazia: nada foi enviado")
+        parent = next((w.parent for w in room if w.parent), "")
+        session_id = full_session_id(parent) if parent else ""
+        if not session_id:
+            self.notify("Esta sala nao tem sessao pai para receber")
             return
         if self.demo:
             self.composer.clear()
             self.notify("Demo: nada foi enviado")
             return
-        cwd = room[0].cwd or os.getcwd()
-        parent = next((w.parent for w in room if w.parent), "")
-        title = self.composer.text.strip()[:60]
-        plan = self._write_plan(title, prompt, cwd)
-        argv = [sys.executable, DISPATCH, plan] + (["--parent", parent] if parent else [])
-        job = {"kind": "hall", "draft": self.composer.state(), "title": title, "plan": plan}
+        cwd = next((w.cwd for w in room if w.cwd), None)
+        title = clean(room[0].room_title) or "a sessao da sala"
+        argv = ["claude", "--bg", "--resume", session_id, ROOM_PREFIX + prompt.lstrip()]
+        job = {"kind": "room", "draft": self.composer.state(), "title": title, "plan": None}
         self.inflight = True
         self.composer.clear()  # instant feedback: the draft comes back only if the send fails.
         self.notify("Enviando...")

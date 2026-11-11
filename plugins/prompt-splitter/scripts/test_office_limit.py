@@ -1,4 +1,4 @@
-"""Tests for the room send (one new session, never a broadcast) and the batch job of the office viewer, with a mock sender."""
+"""Tests for the room send (only to the room's parent session, never a broadcast) and the batch job of the office viewer, with a mock sender."""
 import os
 import sys
 import time
@@ -40,16 +40,16 @@ class RoomSendTest(unittest.TestCase):
             time.sleep(0.01)
         office.drain()
 
-    def test_room_message_is_never_broadcast(self):
+    def test_room_message_goes_only_to_the_parent_session(self):
         office, sender = self.office([make("a"), make("b", state="working"), make("c", state="waiting"), make("d")])
-        self.assertEqual(office._destination(), "Nova sessão nesta sala")
+        self.assertTrue(office._destination().startswith("Para: sessao da sala"))
         with mock.patch("office.office.subprocess.run") as run:
             self.run_submit(office)
         run.assert_not_called()  # no item of the room is stopped or resumed
         self.assertEqual(sender.call_count, 1)
         argv = sender.call_args.args[0]
-        self.assertNotIn("--resume", argv)
-        self.assertEqual(argv[-2:], ["--parent", "p1"])
+        self.assertEqual(argv[:4], ["claude", "--bg", "--resume", "p1"])
+        self.assertTrue(argv[4].endswith("oi a todos"))
 
     def test_batch_shape_is_generic(self):
         office, _ = self.office([make("a")])

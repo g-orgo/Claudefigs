@@ -14,7 +14,7 @@ from office.composer import (GOLD_FOCUSED, INK_BROWN, MAX_TEXT, PAD_CELLS, PANEL
                              TEXT_TOP_ROWS, Composer, draw_composer, field_geometry)
 from office.model import Worker
 from office.office import Office
-from office.office import DISPATCH
+from office.office import DISPATCH, ROOM_PREFIX
 
 SCRATCH = "/tmp/claude-1000/-var-home-Orgo/d01f3965-6a05-45d6-bf5b-c6c0b5c18166/scratchpad"
 FULL_ID = "full-session-id-0001"
@@ -300,7 +300,9 @@ class SendTests(unittest.TestCase):
 
     def room(self, sender, state="done", cwd="/work/project"):
         office = make_office(sender=sender)
-        office.set_workers([make_worker(state, cwd)])
+        worker = make_worker(state, cwd)
+        worker.parent = "parent-session"
+        office.set_workers([worker])
         office.press()
         self.assertEqual(office.mode, "room")
         return office
@@ -309,15 +311,15 @@ class SendTests(unittest.TestCase):
         office.composer.focus()
         office.composer.insert(text)
 
-    def test_room_send_starts_one_new_session_in_room_cwd_under_parent(self):
+    def test_room_send_resumes_only_the_parent_session(self):
         calls = []
 
         def sender(argv, cwd):
-            calls.append((argv, cwd, json.load(open(argv[2]))))
+            calls.append((argv, cwd))
             return 0, ""
 
         office = make_office(sender=sender)
-        workers = [make_worker("done"), make_worker("blocked"), make_worker("done")]
+        workers = [make_worker("done"), make_worker("blocked"), make_worker("working")]
         for i, worker in enumerate(workers):
             worker.id = worker.session_id = f"w{i}"
             worker.parent = "parent-session"
@@ -328,32 +330,25 @@ class SendTests(unittest.TestCase):
         office.submit()
         wait_result(office)
         office.drain()
-        self.assertEqual(len(calls), 1)  # never one send per item of the room
-        argv, cwd, plan = calls[0]
-        self.assertEqual(argv[1], DISPATCH)
-        self.assertEqual(argv[3:], ["--parent", "parent-session"])
-        self.assertNotIn("--resume", argv)
+        self.assertEqual(len(calls), 1)  # never one send per item of the room, never a new session
+        argv, cwd = calls[0]
+        self.assertEqual(argv[:4], ["claude", "--bg", "--resume", FULL_ID])
+        self.assertTrue(argv[4].startswith(ROOM_PREFIX))
+        self.assertTrue(argv[4].endswith("novo pedido"))
         self.assertEqual(cwd, "/work/project")
-        self.assertEqual(plan["cwd"], "/work/project")
-        self.assertEqual([g["prompt"] for g in plan["groups"]], ["novo pedido"])
         self.assertEqual(office.composer.text, "")
 
-    def test_room_send_works_even_when_items_are_busy(self):
+    def test_room_without_parent_keeps_draft(self):
         calls = []
-        office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1], state="working")
+        office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1])
+        for worker in office.workers:
+            worker.parent = ""
         self.type_text(office, "ola")
-        office.submit()
-        wait_result(office)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][1], DISPATCH)
-
-    def test_room_send_prefixes_leading_dash_with_space(self):
-        prompts = []
-        office = self.room(lambda argv, cwd: (prompts.append(json.load(open(argv[2]))["groups"][0]["prompt"]), (0, ""))[1])
-        self.type_text(office, "-v")
-        office.submit()
-        wait_result(office)
-        self.assertEqual(prompts, [" -v"])
+        with mock.patch.object(office, "notify") as notify:
+            office.submit()
+        self.assertEqual(calls, [])
+        notify.assert_called_with("Esta sala nao tem sessao pai para receber")
+        self.assertEqual(office.composer.text, "ola")
 
     def test_failure_restores_text_when_field_is_empty(self):
         office = self.room(lambda argv, cwd: (1, "erro"))
@@ -425,7 +420,7 @@ class SendTests(unittest.TestCase):
 
     def test_destination_text_in_room_and_hall(self):
         office = self.room(lambda argv, cwd: (0, ""))
-        self.assertEqual(office._destination(), "Nova sessão nesta sala")
+        self.assertTrue(office._destination().startswith("Para: sessao da sala"))
         hall = make_office()
         self.assertTrue(hall._destination().startswith("Nova sess"))
 
@@ -575,11 +570,12 @@ class ImageDraftTests(unittest.TestCase):
     def test_submit_sends_prompt_text_with_mentions(self):
         sent = []
         def sender(argv, cwd):
-            with open(argv[2], encoding="utf-8") as handle:
-                sent.append([json.load(handle)["groups"][0]["prompt"]])  # read before the plan file is removed
+            sent.append(argv)
             return 0, ""
         office = make_office(sender=sender)
-        office.set_workers([make_worker("done", "/work/project")])
+        worker = make_worker("done", "/work/project")
+        worker.parent = "parent-session"
+        office.set_workers([worker])
         office.press()
         office.composer.focus()
         office.composer.insert("olhe ")
@@ -588,7 +584,7 @@ class ImageDraftTests(unittest.TestCase):
             office.submit()
             wait_result(office)
             office.drain()
-        self.assertEqual(sent[-1][-1], f"olhe @{os.path.abspath(self.png)}")
+        self.assertEqual(sent[-1][-1], ROOM_PREFIX + f"olhe @{os.path.abspath(self.png)}")
         self.assertEqual(office.composer.text, "")
         self.assertEqual(office.composer.images, {})
 
