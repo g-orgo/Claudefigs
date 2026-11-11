@@ -1,4 +1,4 @@
-"""Tests for the room-wide send and the batch job of the office viewer, with a mock sender."""
+"""Tests for the room send (one new session, never a broadcast) and the batch job of the office viewer, with a mock sender."""
 import os
 import sys
 import time
@@ -40,34 +40,16 @@ class RoomSendTest(unittest.TestCase):
             time.sleep(0.01)
         office.drain()
 
-    def test_all_eligible_get_the_same_prompt(self):
-        office, sender = self.office([make("a"), make("b"), make("c")])
-        with mock.patch("office.office.subprocess.run"):
-            self.run_submit(office)
-        self.assertEqual(sender.call_count, 3)
-        for call in sender.call_args_list:
-            self.assertEqual(call.args[0][:4], ["claude", "--bg", "--resume", "abc"])
-            self.assertEqual(call.args[0][4], "oi a todos")
-
-    def test_busy_and_waiting_are_skipped(self):
-        office, sender = self.office([make("a"), make("b", state="working"), make("c", state="waiting"), make("d", session="")])
-        self.assertEqual(office._destination(), "Para: todos da sala (4 itens)")
-        self.run_submit(office)
-        self.assertEqual(sender.call_count, 1)
-
-    def test_nothing_eligible_keeps_draft(self):
-        office, sender = self.office([make("a", state="working")])
-        office.submit()
-        self.assertEqual(sender.call_count, 0)
-        self.assertFalse(office.inflight)
-        self.assertEqual(office.composer.text, "oi a todos")
-
-    def test_attachable_session_is_stopped_before_resume(self):
-        office, sender = self.office([make("a", attachable=True)])
+    def test_room_message_is_never_broadcast(self):
+        office, sender = self.office([make("a"), make("b", state="working"), make("c", state="waiting"), make("d")])
+        self.assertEqual(office._destination(), "Nova sessão nesta sala")
         with mock.patch("office.office.subprocess.run") as run:
             self.run_submit(office)
-        self.assertEqual(run.call_args.args[0][:3], ["claude", "stop", "a"])
+        run.assert_not_called()  # no item of the room is stopped or resumed
         self.assertEqual(sender.call_count, 1)
+        argv = sender.call_args.args[0]
+        self.assertNotIn("--resume", argv)
+        self.assertEqual(argv[-2:], ["--parent", "p1"])
 
     def test_batch_shape_is_generic(self):
         office, _ = self.office([make("a")])

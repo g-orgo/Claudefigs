@@ -309,49 +309,51 @@ class SendTests(unittest.TestCase):
         office.composer.focus()
         office.composer.insert(text)
 
-    def test_room_send_uses_resume_argv_and_worker_cwd(self):
+    def test_room_send_starts_one_new_session_in_room_cwd_under_parent(self):
         calls = []
 
         def sender(argv, cwd):
-            calls.append((argv, cwd))
+            calls.append((argv, cwd, json.load(open(argv[2]))))
             return 0, ""
 
-        office = self.room(sender)
-        self.type_text(office, "ola")
-        with mock.patch.object(office, "notify") as notify:
-            office.submit()
-            wait_result(office)
-            office.drain()
-        self.assertEqual(calls, [(["claude", "--bg", "--resume", FULL_ID, "ola"], "/work/project")])
-        self.assertEqual(office.composer.text, "")
-        notify.assert_called_with("Enviado para o item da sala")
-
-    def test_room_send_prefixes_leading_dash_with_space(self):
-        calls = []
-        office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1])
-        self.type_text(office, "-v")
+        office = make_office(sender=sender)
+        workers = [make_worker("done"), make_worker("blocked"), make_worker("done")]
+        for i, worker in enumerate(workers):
+            worker.id = worker.session_id = f"w{i}"
+            worker.parent = "parent-session"
+        office.set_workers(workers)
+        office.press()
+        self.assertEqual(office.mode, "room")
+        self.type_text(office, "novo pedido")
         office.submit()
         wait_result(office)
-        self.assertEqual(calls[0][-1], " -v")
+        office.drain()
+        self.assertEqual(len(calls), 1)  # never one send per item of the room
+        argv, cwd, plan = calls[0]
+        self.assertEqual(argv[1], DISPATCH)
+        self.assertEqual(argv[3:], ["--parent", "parent-session"])
+        self.assertNotIn("--resume", argv)
+        self.assertEqual(cwd, "/work/project")
+        self.assertEqual(plan["cwd"], "/work/project")
+        self.assertEqual([g["prompt"] for g in plan["groups"]], ["novo pedido"])
+        self.assertEqual(office.composer.text, "")
 
-    def test_busy_session_is_not_sent(self):
+    def test_room_send_works_even_when_items_are_busy(self):
         calls = []
         office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1], state="working")
         self.type_text(office, "ola")
-        with mock.patch.object(office, "notify") as notify:
-            office.submit()
-        self.assertEqual(calls, [])
-        notify.assert_called_with("Nenhum item da sala pode receber agora")
-        self.assertEqual(office.composer.text, "ola")
+        office.submit()
+        wait_result(office)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], DISPATCH)
 
-    def test_copy_wording_gets_copy_notice(self):
-        office = self.room(lambda argv, cwd: (0, "Criada uma copia da sessao"))
-        self.type_text(office, "ola")
-        with mock.patch.object(office, "notify") as notify:
-            office.submit()
-            wait_result(office)
-            office.drain()
-        notify.assert_called_with("Enviado para o item da sala; 1 continuaram em copia")
+    def test_room_send_prefixes_leading_dash_with_space(self):
+        prompts = []
+        office = self.room(lambda argv, cwd: (prompts.append(json.load(open(argv[2]))["groups"][0]["prompt"]), (0, ""))[1])
+        self.type_text(office, "-v")
+        office.submit()
+        wait_result(office)
+        self.assertEqual(prompts, [" -v"])
 
     def test_failure_restores_text_when_field_is_empty(self):
         office = self.room(lambda argv, cwd: (1, "erro"))
@@ -382,17 +384,6 @@ class SendTests(unittest.TestCase):
         with mock.patch.object(office, "notify") as notify:
             office.submit()
         notify.assert_called_with("Aguarde o envio anterior")
-
-    def test_room_with_no_eligible_item_keeps_draft(self):
-        calls = []
-        office = self.room(lambda argv, cwd: (calls.append(argv), (0, ""))[1], state="waiting")
-        self.type_text(office, "ola")
-        with mock.patch.object(office, "notify") as notify:
-            office.submit()
-            office.drain()
-        self.assertEqual(calls, [])
-        notify.assert_called_with("Nenhum item da sala pode receber agora")
-        self.assertEqual(office.composer.text, "ola")
 
     def test_hall_send_writes_plan_and_runs_dispatch_then_removes_plan(self):
         seen = {}
@@ -434,7 +425,7 @@ class SendTests(unittest.TestCase):
 
     def test_destination_text_in_room_and_hall(self):
         office = self.room(lambda argv, cwd: (0, ""))
-        self.assertEqual(office._destination(), "Para: todos da sala (1 item)")
+        self.assertEqual(office._destination(), "Nova sessão nesta sala")
         hall = make_office()
         self.assertTrue(hall._destination().startswith("Nova sess"))
 
@@ -584,7 +575,8 @@ class ImageDraftTests(unittest.TestCase):
     def test_submit_sends_prompt_text_with_mentions(self):
         sent = []
         def sender(argv, cwd):
-            sent.append(argv)
+            with open(argv[2], encoding="utf-8") as handle:
+                sent.append([json.load(handle)["groups"][0]["prompt"]])  # read before the plan file is removed
             return 0, ""
         office = make_office(sender=sender)
         office.set_workers([make_worker("done", "/work/project")])

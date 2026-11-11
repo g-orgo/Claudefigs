@@ -391,8 +391,7 @@ class Office:
             others = len(self._askers()) - 1
             return f"Pergunta de: {clean(self.asking.worker.title)}" + (f" (+{others})" if others > 0 else "")
         if self.mode == "room":
-            count = len(self._room_workers())
-            return f"Para: todos da sala ({count} {'item' if count == 1 else 'itens'})"
+            return "Nova sessão nesta sala"
         return "Nova sessão"
 
     def _suggest_cwd(self) -> str:
@@ -486,32 +485,29 @@ class Office:
         return [w for w in self.workers if w.room_key == self.door_key]
 
     def _submit_room(self, prompt: str) -> None:
-        """Sends the draft to every item of the open room that can take it now, as one batch job."""
+        """Starts ONE new session for the draft in the room's project, under the room's parent so it shows in the room.
+
+        A room message is a new request, never a broadcast: it must not be resumed into every item of the room.
+        When the request has several independent items, the new session splits them itself through prompt-splitter.
+        """
         room = self._room_workers()
-        targets, busy, waiting, no_session = [], 0, 0, 0
-        for worker in room:
-            if worker.state in ROOM_BUSY:
-                busy += 1
-            elif worker.state == "waiting":
-                waiting += 1
-            elif not full_session_id(worker.session_id):
-                no_session += 1
-            else:
-                targets.append({"worker_id": worker.id, "session_id": full_session_id(worker.session_id),
-                                "cwd": worker.cwd, "attachable": worker.attachable, "title": clean(worker.title)})
-        if not targets:
-            self.notify("Nenhum item da sala pode receber agora")
+        if not room:
+            self.notify("Sala vazia: nada foi enviado")
             return
         if self.demo:
             self.composer.clear()
             self.notify("Demo: nada foi enviado")
             return
-        job = {"kind": "room", "batch": True, "draft": self.composer.state(), "prompt": prompt, "targets": targets,
-               "total": len(room), "counts": {"busy": busy, "waiting": waiting, "no_session": no_session}}
+        cwd = room[0].cwd or os.getcwd()
+        parent = next((w.parent for w in room if w.parent), "")
+        title = self.composer.text.strip()[:60]
+        plan = self._write_plan(title, prompt, cwd)
+        argv = [sys.executable, DISPATCH, plan] + (["--parent", parent] if parent else [])
+        job = {"kind": "hall", "draft": self.composer.state(), "title": title, "plan": plan}
         self.inflight = True
-        self.composer.clear()  # instant feedback, as with a single send; the draft comes back only if nothing was sent.
+        self.composer.clear()  # instant feedback: the draft comes back only if the send fails.
         self.notify("Enviando...")
-        threading.Thread(target=self._run_batch, args=(job,), daemon=True).start()
+        threading.Thread(target=self._run, args=(job, argv, cwd), daemon=True).start()
 
     def _limit_recent(self, worker: Worker, now: float) -> bool:
         window = WEEKLY_WINDOW_MS if worker.limit == "weekly" else LIMIT_WINDOW_MS
@@ -642,8 +638,8 @@ class Office:
             message += f"; {copied} continuaram em copia"
         self.notify(message)
 
-    def _write_plan(self, title: str, prompt: str) -> str:
-        plan = {"cwd": os.getcwd(), "groups": [{"name": f"escritorio-{int(time.time())}", "title": title, "prompt": prompt}]}
+    def _write_plan(self, title: str, prompt: str, cwd: str | None = None) -> str:
+        plan = {"cwd": cwd or os.getcwd(), "groups": [{"name": f"escritorio-{int(time.time())}", "title": title, "prompt": prompt}]}
         fd, path = tempfile.mkstemp(suffix=".json", prefix="office-plan-")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(plan, handle, ensure_ascii=False)
