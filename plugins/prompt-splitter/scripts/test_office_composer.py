@@ -353,6 +353,26 @@ class SendTests(unittest.TestCase):
         notify.assert_called_with("Esta sala nao tem sessao pai para receber")
         self.assertEqual(office.composer.text, "ola")
 
+    def test_resume_command_is_refused_and_keeps_the_draft(self):
+        calls = []
+        office = make_office(sender=lambda argv, cwd: (calls.append(argv), (0, ""))[1])
+        self.type_text(office, "/resume abc")
+        with mock.patch.object(office, "notify") as notify:
+            office.submit()
+        notify.assert_called_with("/resume fica desabilitado no visor de splits")
+        self.assertEqual(calls, [])
+        self.assertEqual(office.composer.text, "/resume abc")
+
+    def test_continue_command_is_refused_and_keeps_the_draft(self):
+        calls = []
+        office = make_office(sender=lambda argv, cwd: (calls.append(argv), (0, ""))[1])
+        self.type_text(office, "/continue")
+        with mock.patch.object(office, "notify") as notify:
+            office.submit()
+        notify.assert_called_with("/resume fica desabilitado no visor de splits")
+        self.assertEqual(calls, [])
+        self.assertEqual(office.composer.text, "/continue")
+
     def test_failure_restores_text_when_field_is_empty(self):
         office = self.room(lambda argv, cwd: (1, "erro"))
         self.type_text(office, "ola")

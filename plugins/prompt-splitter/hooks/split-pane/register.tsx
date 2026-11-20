@@ -1031,6 +1031,8 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     const ran = await next(e)
+    opened = false
+    placed = false
     viewer = (await $.env.get('CLAUDE_SPLIT_VIEWER')) === '1'
     await $.command.register({ name: 'splits', description: 'Mostra o painel das sessoes divididas pelo prompt-splitter' })
     stopTimer?.()

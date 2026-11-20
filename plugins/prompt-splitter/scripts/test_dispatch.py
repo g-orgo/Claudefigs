@@ -54,7 +54,7 @@ class DispatchTest(unittest.TestCase):
         self.addCleanup(mock.patch.stopall)
         self.counter = 0
 
-    def _fake_start(self, group, cwd, mode):
+    def _fake_start(self, group, cwd, mode, parent=None):
         self.counter += 1
         return f"sid-{self.counter}", "split-" + group["name"]
 

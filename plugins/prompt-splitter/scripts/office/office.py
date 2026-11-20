@@ -463,6 +463,10 @@ class Office:
         text = self.composer.text
         if not text.strip():
             return
+        words = text.strip().split()
+        if words and words[0] in ("/resume", "/continue"):
+            self.notify("/resume fica desabilitado no visor de splits")
+            return
         if self.inflight:
             self.notify("Aguarde o envio anterior")
             return

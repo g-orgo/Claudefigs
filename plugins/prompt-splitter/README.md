@@ -110,6 +110,24 @@ Na tabela do dispatch e no `status.py`, `✓` indica item completo e `○` indic
 
 Quando todos os filhos de um split terminam, as respostas finais são entregues à sessão pai uma única vez. O registro durável dessas entregas fica em `~/.claude/state/prompt-splitter-delivered.json`.
 
+## Sessões ocultas no `/resume`
+
+As sessões `split-*` são filhas de background e não aparecem no `/resume`: só a sessão pai fica na lista, e ao retomá-la o painel Splits abre de novo. Um hook de `Stop` e de `PostToolUse` (só quando `CLAUDE_SPLIT_CHILD=1`) grava um registro `{"type":"continued-in",...}` no fim do transcript da filha, sem espaços, porque o Claude Code procura esse texto exato. O alvo é o transcript do pai quando ele está na mesma pasta de projeto; senão, a própria filha (o filtro só exige que o alvo exista). O registro não muda o mtime do arquivo e é ignorado quando a própria filha é carregada (`claude attach` e `--resume <id>` continuam funcionando). No `/resume`, Ctrl+A (todos os projetos) também não mostra as filhas.
+
+Como rede de segurança, um hook de `SessionStart` roda `scripts/hide_resume.py --all --quiet` em segundo plano. Ele só relê arquivos cujo tamanho ou mtime mudou desde a última checagem (`~/.claude/state/prompt-splitter-hidden.json`). Para rodar na mão:
+
+```
+python3 scripts/hide_resume.py --all
+```
+
+O comando imprime `hidden N of M` e pode ser repetido sem duplicar marcadores.
+
+Limitação: uma filha só some depois do primeiro uso de ferramenta ou do fim do turno; nos primeiros segundos após o disparo ela ainda pode aparecer.
+
+## Visor `--splits` e o `/resume`
+
+Na caixa de texto do escritório, `/resume` e `/continue` (alias) são recusados com o aviso "/resume fica desabilitado no visor de splits", e o rascunho fica na caixa. Os dois também saem das sugestões de `/`.
+
 ## Cuidados
 
 Sessões paralelas que editam os mesmos arquivos ou o mesmo repositório git podem conflitar. A skill avisa no plano quando isso parece provável, mas a decisão de agrupar fica com você.

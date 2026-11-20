@@ -47,6 +47,14 @@ class SourceTests(unittest.TestCase):
         suggest.clear_cache()
         shutil.rmtree(self.root, ignore_errors=True)
 
+    def test_resume_and_continue_are_hidden_from_the_list(self):
+        write(os.path.join(self.cwd, ".claude", "commands", "resume.md"), "# Resume\n")
+        write(os.path.join(self.cwd, ".claude", "commands", "continue.md"), "# Continue\n")
+        found = dict(suggest.commands(self.cwd))
+        self.assertNotIn("resume", found)
+        self.assertNotIn("continue", found)
+        self.assertIn("deploy", found)
+
     def test_commands_come_from_all_sources_and_project_wins_on_a_name(self):
         found = dict(suggest.commands(self.cwd))
         self.assertEqual(sorted(found), ["deploy", "review", "sub:notes"])

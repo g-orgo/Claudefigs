@@ -128,13 +128,17 @@ def plan_items(groups: list[dict]) -> list[dict]:
     return items
 
 
-def start_group(group: dict, cwd: str, permission_mode: str | None) -> tuple[str | None, str]:
+def start_group(
+    group: dict, cwd: str, permission_mode: str | None, parent: str | None = None
+) -> tuple[str | None, str]:
     name = session_name(group)
     cmd = ["claude", "--bg", "-n", name]
     if permission_mode:
         cmd += ["--permission-mode", permission_mode]
     cmd.append(group["prompt"])
     env = dict(os.environ, CLAUDE_SPLIT_CHILD="1")
+    if parent:
+        env["CLAUDE_SPLIT_PARENT"] = parent
     env.pop("CLAUDE_CODE_SESSION_ID", None)
     proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=300)
     out = (proc.stdout or "") + (proc.stderr or "")
@@ -233,7 +237,9 @@ def launch_waiting(state: dict, item: dict) -> None:
     group = item["group"]
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     try:
-        session_id, _ = start_group(group, state["common"]["cwd"], state["permission_mode"])
+        session_id, _ = start_group(
+            group, state["common"]["cwd"], state["permission_mode"], parent=state["common"].get("parent")
+        )
     except (Exception, SystemExit) as exc:
         print(f"Launch failed for '{session_name(group)}': {exc}", file=sys.stderr)
         session_id = None
@@ -344,7 +350,7 @@ def main() -> int:
             pending.append(item)
             rows.append((item, name, "aguardando"))
             continue
-        session_id, name = start_group(group, cwd, args.permission_mode)
+        session_id, name = start_group(group, cwd, args.permission_mode, parent=parent)
         if session_id is None:
             launched[str(index)] = {"id": None, "started": time.time()}
             rows.append((item, name, "-"))

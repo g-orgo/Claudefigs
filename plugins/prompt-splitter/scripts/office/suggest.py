@@ -162,6 +162,7 @@ def commands(cwd: str) -> list[tuple[str, str]]:
         for name, desc in found:
             merged.setdefault(name, desc)
     result = sorted(merged.items())
+    result = [(name, desc) for name, desc in result if name not in ("resume", "continue")]
     _commands_cache[cwd] = (time.monotonic(), result)
     return result
 

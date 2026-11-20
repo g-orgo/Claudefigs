@@ -22,6 +22,38 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_SPLIT_CHILD\" = 1 ] && python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hide_resume.py\" --hook || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ \"$CLAUDE_SPLIT_CHILD\" = 1 ] && python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hide_resume.py\" --hook --defer || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "(python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hide_resume.py\" --all --quiet >/dev/null 2>&1 &) ; true",
+            "timeout": 10
+          }
+        ]
       }
     ]
   },
