@@ -8,7 +8,7 @@ Refina as etapas da pipeline dos agentes com verificacoes de bom senso e mantem 
 - **Operadores e validator (`SubagentStart`):** injeta `data/operator.md`, sem mudar os contratos. O relatorio passa a terminar com uma linha `Bom senso:`, com sobreposicoes, variantes e efeitos colaterais encontrados.
 - **A cada prompt (`UserPromptSubmit`):**
   - Se o prompt cita "bom senso", a situacao e registrada direto, sem pergunta.
-  - Se so parece correcao, o modelo registra o exemplo sem perguntar e abre uma notificacao do desktop com timer de 20 s e os botoes "Nao registrar" e "Nao perguntar mais". Sem resposta, o exemplo fica aceito; a sessao nao espera o timer. Se for um pedido novo, ele ignora em silencio.
+  - Se so parece correcao, o modelo registra o exemplo sem perguntar e mostra, no proprio terminal, uma banda acima do prompt com contagem de 20 s e os botoes "Nao registrar" e "Nao perguntar mais" (mod `bom-senso-band`). Sem resposta, o exemplo fica aceito; a sessao nao espera o timer. Fora da janela, use `/bom-senso:exemplos --remove <id>`. Se for um pedido novo, ele ignora em silencio.
   - Se o assunto bate com um exemplo do registro (3 palavras-chave ou mais), a regra entra no contexto.
 
 Sessoes de split nao recebem a sugestao, porque nao ha ninguem para responder, e mensagens de plugins sao ignoradas.

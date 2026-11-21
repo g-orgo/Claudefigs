@@ -167,42 +167,34 @@ class TimerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.bin = Path(self.tmp.name) / "bin"
-        self.bin.mkdir()
         os.environ["BOM_SENSO_STATE"] = self.tmp.name
         self.addCleanup(os.environ.pop, "BOM_SENSO_STATE", None)
 
-    def fake_notify(self, output):
-        script = self.bin / "notify-send"
-        script.write_text(f"#!/bin/sh\necho {output}\n")
-        script.chmod(0o755)
-        os.environ["PATH"] = f"{self.bin}:{os.environ['PATH']}"
-        self.addCleanup(os.environ.__setitem__, "PATH", os.environ["PATH"].split(":", 1)[1])
-
-    def new_entry(self):
-        return store.add("cobertura", "s", "e", "r", ["a"])["id"]
+    def new_entry(self, seconds=20):
+        entry = store.add("cobertura", "s", "e", "r", ["a"])
+        store.start_timer(entry, seconds, "abc")
+        return entry["id"]
 
     def test_no_answer_keeps_example(self):
-        self.fake_notify("")
-        entry = self.new_entry()
-        self.assertEqual(store.run_timer(entry, 1), "accepted")
+        entry = self.new_entry(seconds=-1)
+        self.assertIsNone(store.decline("abc"))
         self.assertEqual([r["id"] for r in store.user_examples()], [entry])
 
     def test_decline_removes_example(self):
-        self.fake_notify("decline")
-        self.assertEqual(store.run_timer(self.new_entry(), 1), "decline")
+        entry = self.new_entry()
+        self.assertEqual(store.decline("abc"), entry)
         self.assertEqual(store.user_examples(), [])
 
-    def test_mute_removes_and_mutes(self):
-        self.fake_notify("mute")
-        self.assertEqual(store.run_timer(self.new_entry(), 1, "abc"), "mute")
+    def test_decline_with_mute(self):
+        self.new_entry()
+        store.decline("abc", also_mute=True)
         self.assertEqual(store.user_examples(), [])
         self.assertTrue(store.is_muted("abc"))
 
-    def test_start_timer_skipped_when_disabled(self):
-        os.environ["BOM_SENSO_NO_NOTIFY"] = "1"
-        self.addCleanup(os.environ.pop, "BOM_SENSO_NO_NOTIFY", None)
-        self.assertFalse(store.start_timer("x", 20))
+    def test_other_session_untouched(self):
+        entry = self.new_entry()
+        self.assertIsNone(store.decline("other"))
+        self.assertEqual([r["id"] for r in store.user_examples()], [entry])
 
 
 if __name__ == "__main__":

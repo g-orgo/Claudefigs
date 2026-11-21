@@ -14,6 +14,11 @@
       "name": "bom-senso",
       "description": "Bom senso: refines the agent pipeline with common-sense checks and records situations where they were missing.",
       "source": "./plugins/bom-senso"
+    },
+    {
+      "name": "bom-senso-band",
+      "description": "Terminal countdown band to decline a new Bom senso example within 20 s.",
+      "source": "./plugins/bom-senso-band"
     }
   ]
 }

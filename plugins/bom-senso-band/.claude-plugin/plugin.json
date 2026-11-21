@@ -1,0 +1,6 @@
+{
+  "name": "bom-senso-band",
+  "version": "0.1.0",
+  "description": "Countdown band above the prompt to decline a new Bom senso example within 20 s.",
+  "types": "./types/index.d.ts"
+}

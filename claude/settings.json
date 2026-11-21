@@ -36,7 +36,8 @@
     "claude-md-management@claude-plugins-official": true,
     "github@claude-plugins-official": true,
     "prompt-splitter@local-plugins": true,
-    "bom-senso@local-plugins": true
+    "bom-senso@local-plugins": true,
+    "bom-senso-band@local-plugins": true
   },
   "extraKnownMarketplaces": {
     "local-plugins": {
@@ -51,8 +52,8 @@
       "effortLevel": "medium"
     },
     "claude-opus-5-5": {
-      "autoCompactWindow": 400000,
-      "effortLevel": "high"
+      "effortLevel": "high",
+      "autoCompactWindow": 400000
     }
   },
   "autoCompactWindow": 100000,
