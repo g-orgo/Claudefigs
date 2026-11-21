@@ -7,6 +7,8 @@ updates and never reaches the public config repository.
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -94,6 +96,41 @@ def is_muted(session_id):
     return session_id in _muted()
 
 
+def start_timer(example_id, seconds, session_id=""):
+    """Detach a notifier that lets the user decline the new example within `seconds`."""
+    if os.environ.get("BOM_SENSO_NO_NOTIFY") == "1" or not shutil.which("notify-send"):
+        return False
+    cmd = [sys.executable, str(Path(__file__).resolve()), "timer", example_id,
+           "--seconds", str(seconds), "--session", session_id]
+    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    return True
+
+
+def run_timer(example_id, seconds, session_id=""):
+    """Show the notification; no answer before it expires means the example stays recorded."""
+    rule = next((r["rule"] for r in user_examples() if r["id"] == example_id), "")
+    cmd = ["notify-send", "-a", "Bom senso", "-u", "normal", "-t", str(seconds * 1000),
+           "-A", "decline=Nao registrar"]
+    if session_id:
+        cmd += ["-A", "mute=Nao perguntar mais"]
+    cmd += ["Bom senso: novo exemplo", f"{rule}\nAceito automaticamente em {seconds}s."]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return "accepted"
+    action = out.strip()
+    if action in ("decline", "mute"):
+        try:
+            remove(example_id)
+        except KeyError:
+            pass
+        if action == "mute":
+            mute(session_id)
+        return action
+    return "accepted"
+
+
 def _print_list(category):
     rows = [dict(r, id=f"seed:{r['id']}") for r in seeds()] + user_examples()
     for row in rows:
@@ -111,6 +148,13 @@ def main(argv=None):
     for field in ("situation", "expected", "rule"):
         new.add_argument(f"--{field}", required=True)
     new.add_argument("--keywords", default="", help="comma separated, accent-free, lowercase")
+    new.add_argument("--timer", type=int, default=0, metavar="SECONDS",
+                     help="show a decline notification; accepted when it expires")
+    new.add_argument("--session", default="", help="session id, enables the mute action")
+    timer = sub.add_parser("timer")
+    timer.add_argument("target")
+    timer.add_argument("--seconds", type=int, default=20)
+    timer.add_argument("--session", default="")
     listing = sub.add_parser("list")
     listing.add_argument("--category", choices=CATEGORIES)
     listing.add_argument("--remove", metavar="ID")
@@ -123,6 +167,10 @@ def main(argv=None):
         words = [w.strip() for w in args.keywords.split(",") if w.strip()]
         entry = add(args.category, args.situation, args.expected, args.rule, words)
         print(f"Registrado: {entry['id']}")
+        if args.timer > 0 and start_timer(entry["id"], args.timer, args.session):
+            print(f"Notificacao aberta: aceito automaticamente em {args.timer}s se nao for recusado.")
+    elif args.command == "timer":
+        print(run_timer(args.target, args.seconds, args.session))
     elif args.command == "list" and args.remove:
         remove(args.remove)
         print(f"Removido: {args.remove}")

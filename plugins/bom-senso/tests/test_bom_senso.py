@@ -122,8 +122,8 @@ class HookTest(unittest.TestCase):
 
     def test_correction_asks(self):
         text = context(run_hook("prompt", self.payload, self.tmp.name))
-        self.assertIn("AskUserQuestion", text)
-        self.assertIn("mute abc", text)
+        self.assertIn("--timer 20", text)
+        self.assertIn("--session abc", text)
         self.assertNotIn("--project", text)
         self.assertNotIn("So neste projeto", text)
 
@@ -131,7 +131,7 @@ class HookTest(unittest.TestCase):
         payload = {**self.payload, "prompt": "Isso foi falta de bom senso"}
         text = context(run_hook("prompt", payload, self.tmp.name))
         self.assertIn("registrar", text)
-        self.assertNotIn("AskUserQuestion", text)
+        self.assertNotIn("--timer 20", text)
 
     def test_explicit_mention_records_even_when_muted(self):
         subprocess.run([sys.executable, str(ROOT / "scripts/store.py"), "mute", "abc"],
@@ -141,12 +141,12 @@ class HookTest(unittest.TestCase):
 
     def test_split_child_is_not_asked(self):
         result = run_hook("prompt", self.payload, self.tmp.name, CLAUDE_SPLIT_CHILD="1")
-        self.assertNotIn("AskUserQuestion", result.stdout)
+        self.assertNotIn("--timer 20", result.stdout)
 
     def test_muted_session_is_not_asked(self):
         subprocess.run([sys.executable, str(ROOT / "scripts/store.py"), "mute", "abc"],
                        env=dict(os.environ, BOM_SENSO_STATE=self.tmp.name), capture_output=True)
-        self.assertNotIn("AskUserQuestion", run_hook("prompt", self.payload, self.tmp.name).stdout)
+        self.assertNotIn("--timer 20", run_hook("prompt", self.payload, self.tmp.name).stdout)
 
     def test_session_and_subagent_get_their_checklists(self):
         self.assertIn("Before planning", context(run_hook("session", {"cwd": "/p"}, self.tmp.name)))
@@ -160,6 +160,49 @@ class HookTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / "hooks/hook.py"), "prompt"], input="{not json",
                                 capture_output=True, text=True, env=dict(os.environ, BOM_SENSO_STATE=self.tmp.name))
         self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+
+
+class TimerTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.bin = Path(self.tmp.name) / "bin"
+        self.bin.mkdir()
+        os.environ["BOM_SENSO_STATE"] = self.tmp.name
+        self.addCleanup(os.environ.pop, "BOM_SENSO_STATE", None)
+
+    def fake_notify(self, output):
+        script = self.bin / "notify-send"
+        script.write_text(f"#!/bin/sh\necho {output}\n")
+        script.chmod(0o755)
+        os.environ["PATH"] = f"{self.bin}:{os.environ['PATH']}"
+        self.addCleanup(os.environ.__setitem__, "PATH", os.environ["PATH"].split(":", 1)[1])
+
+    def new_entry(self):
+        return store.add("cobertura", "s", "e", "r", ["a"])["id"]
+
+    def test_no_answer_keeps_example(self):
+        self.fake_notify("")
+        entry = self.new_entry()
+        self.assertEqual(store.run_timer(entry, 1), "accepted")
+        self.assertEqual([r["id"] for r in store.user_examples()], [entry])
+
+    def test_decline_removes_example(self):
+        self.fake_notify("decline")
+        self.assertEqual(store.run_timer(self.new_entry(), 1), "decline")
+        self.assertEqual(store.user_examples(), [])
+
+    def test_mute_removes_and_mutes(self):
+        self.fake_notify("mute")
+        self.assertEqual(store.run_timer(self.new_entry(), 1, "abc"), "mute")
+        self.assertEqual(store.user_examples(), [])
+        self.assertTrue(store.is_muted("abc"))
+
+    def test_start_timer_skipped_when_disabled(self):
+        os.environ["BOM_SENSO_NO_NOTIFY"] = "1"
+        self.addCleanup(os.environ.pop, "BOM_SENSO_NO_NOTIFY", None)
+        self.assertFalse(store.start_timer("x", 20))
 
 
 if __name__ == "__main__":

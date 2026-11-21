@@ -18,12 +18,8 @@ EVENTS = {"session": "SessionStart", "subagent": "SubagentStart", "prompt": "Use
 USER_RULES_LIMIT = 8
 CLI = f'python3 "{ROOT}/scripts/store.py"'
 
-ASK = """bom-senso: suggestion to add an example, this prompt may be a correction (signal: "{signal}"). If the user is correcting something the agent got wrong, skipped or should have noticed unprompted, call AskUserQuestion once, in pt-BR, before any other step (including a split), then carry on with the work. If it is a new request, or the same situation was already asked in this session, ignore this note silently. If AskUserQuestion is unavailable, skip it.
-Question: one line naming the situation, asking whether to record it as a Bom senso example. Header: "Bom senso". Options:
-- "Registrar": record it; every example applies to every project.
-- "Nao registrar": this one is not a lapse of common sense.
-- "Nao perguntar mais": silence this for the session.
-On the first, follow the bom-senso `registrar` skill. On the last, run: {cli} mute {session_id}"""
+ASK = """bom-senso: possible example, this prompt may be a correction (signal: "{signal}"). If the user is correcting something the agent got wrong, skipped or should have noticed unprompted, do NOT ask the user: record it right away, before any other step (including a split), following the bom-senso `registrar` skill, but call `add` with `--timer 20 --session {session_id}`. That opens a 20 s desktop notification where the user can decline ("Nao registrar") or mute the session; with no answer the example stays accepted. Do not wait for it: tell the user in one line, in pt-BR, which rule was recorded and that it is auto-accepted in 20 s unless declined in the notification, then carry on with the work. If it is a new request, or the same situation was already recorded in this session, ignore this note silently.
+CLI: {cli}"""
 
 RECORD = """bom-senso: the user named a lapse of common sense in this prompt. Do not ask about it: follow the bom-senso `registrar` skill right away, before any other step (including a split), then carry on with the work. Only skip it if the prompt merely talks about the Bom senso plugin itself, or the same situation was already recorded in this session."""
 
